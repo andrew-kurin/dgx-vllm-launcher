@@ -1,4 +1,4 @@
-# qwen-vllm-launcher
+# dgx-vllm-launcher
 
 A lightweight Python launcher for serving Qwen FP8 and NVFP4 models with vLLM.
 
@@ -35,20 +35,20 @@ uv sync --group dev
 Run with Python:
 
 ```bash
-uv run qwen-vllm-launcher fp8
-uv run qwen-vllm-launcher nvfp4 --moe-backend flashinfer_b12x
+uv run dgx-vllm-launcher fp8
+uv run dgx-vllm-launcher nvfp4 --moe-backend flashinfer_b12x
 ```
 
 Or run as a module:
 
 ```bash
-uv run python -m qwen_vllm_launcher fp8
+uv run python -m dgx_vllm_launcher fp8
 ```
 
 ## Command-line usage
 
 ```bash
-qwen-vllm-launcher <fp8|nvfp4> [-r|--reasoning] [-w|--no-warmup] [-s|--no-smoke-check] [-d|--detach]
+dgx-vllm-launcher <fp8|nvfp4> [-r|--reasoning] [-w|--no-warmup] [-s|--no-smoke-check] [-d|--detach]
                       [-p|--enable-prefix-caching] [-m|--moe-backend <name>] [-l|--linear-backend <name>] [-R|--restart-policy <policy>]
 ```
 
@@ -59,7 +59,7 @@ qwen-vllm-launcher <fp8|nvfp4> [-r|--reasoning] [-w|--no-warmup] [-s|--no-smoke-
 
 ### Arguments
 
-- `-r, --reasoning`  Enable Qwen reasoning parser + auto tool choice
+- `-r, --reasoning`  Enable Qwen reasoning parser + auto tool choice (needed for Pi tool calling)
 - `-w, --no-warmup`  Skip startup warmup requests
 - `-s, --no-smoke-check`  Skip post-startup smoke check request
 - `-d, --detach`  Exit after health/warmup/smoke checks, leaving container running in Docker
@@ -77,7 +77,7 @@ qwen-vllm-launcher <fp8|nvfp4> [-r|--reasoning] [-w|--no-warmup] [-s|--no-smoke-
 Example:
 
 ```bash
-qwen-vllm-launcher nvfp4 --reasoning --detach --restart-policy unless-stopped
+dgx-vllm-launcher nvfp4 --reasoning --detach --restart-policy unless-stopped
 ```
 
 Service management:
@@ -128,7 +128,7 @@ Or run individually:
 - Lint:
 
 ```bash
-uv run ruff check qwen_vllm_launcher tests
+uv run ruff check dgx_vllm_launcher tests
 ```
 
 - Type check:

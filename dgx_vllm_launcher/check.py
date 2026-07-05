@@ -14,7 +14,7 @@ def _run_python_module(module: str, *args: str) -> None:
 def main() -> int:
     """Run all project checks."""
     checks = [
-        ("ruff", ["check", "qwen_vllm_launcher", "tests"]),
+        ("ruff", ["check", "dgx_vllm_launcher", "tests"]),
         ("pyright", []),
         ("pytest", ["-q"]),
     ]

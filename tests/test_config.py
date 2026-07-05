@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from qwen_vllm_launcher.config import (
+from dgx_vllm_launcher.config import (
     DEFAULT_FP8_TIMEOUT,
     DEFAULT_FP8_IMAGE,
     DEFAULT_NVFP4_IMAGE,

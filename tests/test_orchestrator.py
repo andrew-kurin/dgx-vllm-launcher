@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from qwen_vllm_launcher import cli
-import qwen_vllm_launcher.orchestrator as orchestrator
-from qwen_vllm_launcher.orchestrator import (
+from dgx_vllm_launcher import cli
+import dgx_vllm_launcher.orchestrator as orchestrator
+from dgx_vllm_launcher.orchestrator import (
     build_common_args,
     build_start_command,
     run_warmup,

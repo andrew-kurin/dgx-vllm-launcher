@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from qwen_vllm_launcher import docker_ops
+from dgx_vllm_launcher import docker_ops
 
 
 def test_docker_cmd_no_sg(monkeypatch):

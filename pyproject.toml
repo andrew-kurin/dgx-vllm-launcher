@@ -1,5 +1,5 @@
 [project]
-name = "qwen-vllm-launcher"
+name = "dgx-vllm-launcher"
 description = "Launcher for FP8/NVFP4 vLLM serving"
 version = "0.1.0"
 readme = "README.md"
@@ -19,8 +19,8 @@ dev = [
 ]
 
 [project.scripts]
-qwen-vllm-launcher = "qwen_vllm_launcher.orchestrator:main"
-check = "qwen_vllm_launcher.check:main"
+dgx-vllm-launcher = "dgx_vllm_launcher.orchestrator:main"
+check = "dgx_vllm_launcher.check:main"
 
 [dependency-groups]
 dev = [

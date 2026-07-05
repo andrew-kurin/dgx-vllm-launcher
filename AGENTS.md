@@ -17,7 +17,7 @@ uv run check
 uv sync --group dev
 
 # Run the launcher
-uv run qwen-vllm-launcher fp8
+uv run dgx-vllm-launcher fp8
 # or
-uv run qwen-vllm-launcher nvfp4
+uv run dgx-vllm-launcher nvfp4
 ```

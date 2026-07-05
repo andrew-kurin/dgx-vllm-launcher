@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from qwen_vllm_launcher import cli
+from dgx_vllm_launcher import cli
 
 
 def test_parse_args_fp8_defaults():

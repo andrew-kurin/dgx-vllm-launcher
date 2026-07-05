@@ -4,21 +4,24 @@ import os
 from dataclasses import dataclass
 from typing import Callable, Literal
 
-Variant = Literal["qwen36-fp8", "qwen36-nvfp4", "gemma4-nvfp4"]
+Variant = Literal["qwen36-fp8", "qwen36-nvfp4", "gemma4-nvfp4", "ornith1.0-nvfp4"]
 
 VARIANTS: tuple[Variant, ...] = (
     "qwen36-fp8",
     "qwen36-nvfp4",
     "gemma4-nvfp4",
+    "ornith1.0-nvfp4",
 )
 
 MODEL_BASE = "Qwen/Qwen3.6-35B-A3B"
 GEMMA4_MODEL = "nvidia/Gemma-4-26B-A4B-NVFP4"
+ORNITH_MODEL = "sakamakismile/Ornith-1.0-35B-NVFP4"
 QWEN_LOCAL_NVFP4_PATH = "~/models/Qwen3.6-35B-A3B-NVFP4"
 
 DEFAULT_FP8_IMAGE = "vllm/vllm-openai:nightly"
 DEFAULT_NVFP4_IMAGE = "vllm/vllm-openai@sha256:7feb2a09304e3b2d38e224a100316e84fe3205faa7605060609e2c02179cbca6"
 DEFAULT_GEMMA4_NVFP4_IMAGE = DEFAULT_NVFP4_IMAGE
+DEFAULT_ORNITH_NVFP4_IMAGE = DEFAULT_NVFP4_IMAGE
 
 DEFAULT_READY_TIMEOUT = 1800
 DEFAULT_VLLM_CACHE_DIR = "~/.cache/vllm"
@@ -73,6 +76,17 @@ VARIANT_PROFILES: dict[Variant, VariantProfile] = {
         default_image=DEFAULT_GEMMA4_NVFP4_IMAGE,
         served_model_name="gemma4-nvfp4",
         startup_message="→ Serving Gemma 4 26B A4B-NVFP4 from Hugging Face...",
+        default_moe_backend="flashinfer_b12x",
+        requires_hf_token=False,
+        quantization="modelopt",
+    ),
+    "ornith1.0-nvfp4": VariantProfile(
+        variant="ornith1.0-nvfp4",
+        model=ORNITH_MODEL,
+        image_env_var="VLLM_IMAGE_ORNITH_NVFP4",
+        default_image=DEFAULT_ORNITH_NVFP4_IMAGE,
+        served_model_name="ornith1.0-nvfp4",
+        startup_message="→ Serving Ornith 1.0 35B NVFP4 from Hugging Face...",
         default_moe_backend="flashinfer_b12x",
         requires_hf_token=False,
         quantization="modelopt",

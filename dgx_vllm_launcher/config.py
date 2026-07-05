@@ -17,6 +17,10 @@ MODEL_BASE = "Qwen/Qwen3.6-35B-A3B"
 GEMMA4_MODEL = "nvidia/Gemma-4-26B-A4B-NVFP4"
 ORNITH_MODEL = "sakamakismile/Ornith-1.0-35B-NVFP4"
 QWEN_LOCAL_NVFP4_PATH = "~/models/Qwen3.6-35B-A3B-NVFP4"
+GEMMA4_LOCAL_NVFP4_PATH = "~/models/Gemma-4-26B-A4B-NVFP4"
+ORNITH_LOCAL_NVFP4_PATH = "~/models/Ornith-1.0-35B-NVFP4"
+
+QWEN_NVFP4_HF_MODEL = "Qwen/Qwen3.6-35B-A3B-NVFP4"
 
 DEFAULT_FP8_IMAGE = "vllm/vllm-openai:nightly"
 DEFAULT_NVFP4_IMAGE = "vllm/vllm-openai@sha256:7feb2a09304e3b2d38e224a100316e84fe3205faa7605060609e2c02179cbca6"
@@ -54,6 +58,7 @@ class VariantProfile:
     mount_local_model: bool = False
     local_model_path: str | None = None
     quantization: str | None = None
+    inject_hf_token: bool = False
 
     @property
     def default_moe_backend(self) -> str | None:
@@ -75,19 +80,21 @@ VARIANT_PROFILES: dict[Variant, VariantProfile] = {
         runtime_defaults=VariantRuntimeDefaults(),
         requires_hf_token=True,
         quantization=None,
+        inject_hf_token=True,
     ),
     "qwen36-nvfp4": VariantProfile(
         variant="qwen36-nvfp4",
-        model="/model",
+        model=QWEN_NVFP4_HF_MODEL,
         image_env_var="VLLM_IMAGE_NVFP4",
         default_image=DEFAULT_NVFP4_IMAGE,
         served_model_name="qwen36-nvfp4",
-        startup_message="→ Serving local Qwen3.6 NVFP4 model...",
+        startup_message="→ Serving Qwen3.6 NVFP4 from Hugging Face...",
         runtime_defaults=VariantRuntimeDefaults(moe_backend="flashinfer_b12x"),
         requires_hf_token=False,
         mount_local_model=True,
         local_model_path=QWEN_LOCAL_NVFP4_PATH,
         quantization="modelopt",
+        inject_hf_token=False,
     ),
     "gemma4-nvfp4": VariantProfile(
         variant="gemma4-nvfp4",
@@ -100,7 +107,10 @@ VARIANT_PROFILES: dict[Variant, VariantProfile] = {
         # not support this activation in several vLLM releases, so default must be unset.
         runtime_defaults=VariantRuntimeDefaults(),
         requires_hf_token=False,
+        local_model_path=GEMMA4_LOCAL_NVFP4_PATH,
+        mount_local_model=True,
         quantization="modelopt",
+        inject_hf_token=True,
     ),
     "ornith-nvfp4": VariantProfile(
         variant="ornith-nvfp4",
@@ -111,7 +121,10 @@ VARIANT_PROFILES: dict[Variant, VariantProfile] = {
         startup_message="→ Serving Ornith 1.0 35B NVFP4 from Hugging Face...",
         runtime_defaults=VariantRuntimeDefaults(),
         requires_hf_token=False,
+        local_model_path=ORNITH_LOCAL_NVFP4_PATH,
+        mount_local_model=True,
         quantization="modelopt",
+        inject_hf_token=True,
     ),
 }
 

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from dgx_vllm_launcher import cli
+from dgx_vllm_launcher.config import VARIANT_PROFILES
 import dgx_vllm_launcher.orchestrator as orchestrator
 from dgx_vllm_launcher.orchestrator import (
     build_common_args,
@@ -34,7 +37,7 @@ def test_build_start_command_adds_variant_args_and_envs(monkeypatch):
     command = build_start_command(
         variant="qwen36-nvfp4",
         image="vllm-image",
-        model="/model",
+        model="Qwen/Qwen3.6-35B-A3B-NVFP4",
         container_name="vllm-qwen36-nvfp4",
         common_args=["--host", "0.0.0.0", "--quantization", "modelopt"],
         host_cache_dir="/tmp/cache",
@@ -55,7 +58,7 @@ def test_build_start_command_reuses_host_vllm_cache_dir():
     command = build_start_command(
         variant="qwen36-nvfp4",
         image="vllm-image",
-        model="/model",
+        model="Qwen/Qwen3.6-35B-A3B-NVFP4",
         container_name="vllm-qwen36-nvfp4",
         common_args=["--host", "0.0.0.0"],
         host_cache_dir="/tmp/custom-vllm-cache",
@@ -123,6 +126,68 @@ def test_build_start_command_ornith4_does_not_mount_local_model(monkeypatch):
     assert "--quantization" in command
     assert "modelopt" in command
     assert "/root/.cache/huggingface" not in " ".join(command)
+
+
+def test_build_start_command_prefers_local_model_when_preloaded(tmp_path, monkeypatch):
+    preloaded = tmp_path / "Qwen3.6-35B-A3B-NVFP4"
+    preloaded.mkdir()
+
+    monkeypatch.setitem(
+        VARIANT_PROFILES,
+        "qwen36-nvfp4",
+        replace(VARIANT_PROFILES["qwen36-nvfp4"], local_model_path=str(preloaded)),
+    )
+
+    command = build_start_command(
+        variant="qwen36-nvfp4",
+        image="vllm-image",
+        model="Qwen/Qwen3.6-35B-A3B-NVFP4",
+        container_name="vllm-qwen36-nvfp4",
+        common_args=["--host", "0.0.0.0", "--quantization", "modelopt"],
+        host_cache_dir="/tmp/cache",
+        restart_policy=None,
+        moe_backend=None,
+        linear_backend=None,
+        hf_token=None,
+        use_preloaded_models=True,
+    )
+
+    assert f"-v {preloaded}:/model" in " ".join(command)
+    assert command[command.index("vllm-image") + 1] == "/model"
+
+
+def test_build_start_command_injects_optional_hf_token_for_hosted_variants():
+    gemma_command = build_start_command(
+        variant="gemma4-nvfp4",
+        image="vllm-image",
+        model="nvidia/Gemma-4-26B-A4B-NVFP4",
+        container_name="vllm-gemma4-nvfp4",
+        common_args=["--host", "0.0.0.0", "--quantization", "modelopt"],
+        host_cache_dir="/tmp/cache",
+        restart_policy=None,
+        moe_backend=None,
+        linear_backend=None,
+        hf_token="token123",
+    )
+
+    assert "HF_TOKEN=token123" in gemma_command
+    assert "/root/.cache/huggingface" in " ".join(gemma_command)
+
+    ornith_command = build_start_command(
+        variant="ornith-nvfp4",
+        image="vllm-image",
+        model="sakamakismile/Ornith-1.0-35B-NVFP4",
+        container_name="vllm-ornith-nvfp4",
+        common_args=["--host", "0.0.0.0", "--quantization", "modelopt"],
+        host_cache_dir="/tmp/cache",
+        restart_policy=None,
+        moe_backend=None,
+        linear_backend=None,
+        hf_token="token123",
+    )
+
+    assert "HF_TOKEN=token123" in ornith_command
+    assert "/root/.cache/huggingface" in " ".join(ornith_command)
 
 
 def test_run_warmup_uses_sender_callable(tmp_path):
@@ -535,3 +600,32 @@ def test_resolve_hf_token_from_hf_home(monkeypatch, tmp_path):
     token = orchestrator._resolve_hf_token()
 
     assert token == "home-token"
+
+
+def test_start_server_uses_optional_hf_token_for_hosted_variants(monkeypatch):
+    captured = {"cmd": []}
+
+    class Result:
+        stdout = "container-id\n"
+
+    def fake_run_docker(cmd, check=True, capture_output=True):
+        captured["cmd"] = cmd
+        return Result()
+
+    monkeypatch.setenv("HF_TOKEN", "seed-token")
+    monkeypatch.setattr(orchestrator, "run_docker", fake_run_docker)
+
+    cid = orchestrator.start_server(
+        variant="gemma4-nvfp4",
+        image="vllm-image",
+        model="nvidia/Gemma-4-26B-A4B-NVFP4",
+        container_name="vllm-gemma4-nvfp4",
+        common_args=["--host", "0.0.0.0"],
+        moe_backend=None,
+        linear_backend=None,
+        restart_policy=None,
+        host_cache_dir="/tmp/cache",
+    )
+
+    assert cid == "container-id"
+    assert "HF_TOKEN=seed-token" in captured["cmd"]

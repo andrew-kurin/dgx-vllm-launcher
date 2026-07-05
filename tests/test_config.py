@@ -28,7 +28,7 @@ def test_resolve_variant_config_qwen36_nvfp4_defaults_and_unified_env_override()
             "VLLM_READY_TIMEOUT": "42",
         }.get(key, default),
     )
-    assert cfg.model == "/model"
+    assert cfg.model == "Qwen/Qwen3.6-35B-A3B-NVFP4"
     assert cfg.image == DEFAULT_NVFP4_IMAGE
     assert cfg.served_model_name == "qwen36-nvfp4"
     assert cfg.ready_timeout_seconds == 42
@@ -68,15 +68,24 @@ def test_variant_profiles_are_complete():
 def test_variant_profiles_capture_expected_launch_hints():
     assert VARIANT_PROFILES["qwen36-fp8"].requires_hf_token is True
     assert VARIANT_PROFILES["qwen36-fp8"].quantization is None
+    assert VARIANT_PROFILES["qwen36-fp8"].inject_hf_token is True
+
     assert VARIANT_PROFILES["qwen36-nvfp4"].quantization == "modelopt"
     assert VARIANT_PROFILES["qwen36-nvfp4"].mount_local_model is True
     assert VARIANT_PROFILES["qwen36-nvfp4"].default_moe_backend == "flashinfer_b12x"
+    assert VARIANT_PROFILES["qwen36-nvfp4"].inject_hf_token is False
+    assert VARIANT_PROFILES["qwen36-nvfp4"].model.startswith("Qwen/Qwen3.6")
+
     assert VARIANT_PROFILES["gemma4-nvfp4"].requires_hf_token is False
     assert VARIANT_PROFILES["gemma4-nvfp4"].default_moe_backend is None
+    assert VARIANT_PROFILES["gemma4-nvfp4"].inject_hf_token is True
+    assert VARIANT_PROFILES["gemma4-nvfp4"].mount_local_model is True
+
     assert VARIANT_PROFILES["ornith-nvfp4"].requires_hf_token is False
     assert VARIANT_PROFILES["ornith-nvfp4"].default_moe_backend is None
+    assert VARIANT_PROFILES["ornith-nvfp4"].inject_hf_token is True
+    assert VARIANT_PROFILES["ornith-nvfp4"].mount_local_model is True
     assert VARIANT_PROFILES["ornith-nvfp4"].quantization == "modelopt"
-
 
 def test_resolve_cache_dir_uses_env_override():
     value = resolve_cache_dir(env_getter=lambda key, default: "/tmp/custom-cache")

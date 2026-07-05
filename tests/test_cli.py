@@ -16,6 +16,7 @@ def test_parse_args_qwen36_fp8_defaults():
     assert args.linear_backend is None
     assert args.restart_policy is None
     assert args.show_defaults is False
+    assert args.use_preloaded_models is False
 
 
 def test_parse_args_flags():
@@ -46,6 +47,12 @@ def test_parse_args_flags():
     assert args.linear_backend == "flashinfer"
     assert args.restart_policy == "on-failure"
     assert args.show_defaults is False
+    assert args.use_preloaded_models is False
+
+
+def test_parse_args_with_preloaded_models_flag():
+    args = cli.parse_args(["gemma4-nvfp4", "--use-preloaded-models"])
+    assert args.use_preloaded_models is True
 
 
 def test_parse_args_gemma4_variant():
@@ -53,6 +60,7 @@ def test_parse_args_gemma4_variant():
     assert args.variant == "gemma4-nvfp4"
     assert args.restart_policy == "unless-stopped"
     assert args.show_defaults is False
+    assert args.use_preloaded_models is False
 
 
 def test_parse_args_ornith_variant():
@@ -60,6 +68,7 @@ def test_parse_args_ornith_variant():
     assert args.variant == "ornith-nvfp4"
     assert args.moe_backend == "flashinfer"
     assert args.show_defaults is False
+    assert args.use_preloaded_models is False
 
 
 def test_parse_args_short_flags():
@@ -90,6 +99,7 @@ def test_parse_args_short_flags():
     assert args.linear_backend == "flashinfer"
     assert args.restart_policy == "unless-stopped"
     assert args.show_defaults is False
+    assert args.use_preloaded_models is False
 
 
 def test_parse_args_show_defaults_flag_without_variant():

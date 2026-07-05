@@ -7,7 +7,7 @@ A lightweight Python launcher for serving Qwen FP8 / Qwen NVFP4 / Gemma-4 NVFP4 
 This project provides a single Python entrypoint for running either:
 
 - `qwen36-fp8` model from Hugging Face
-- `qwen36-nvfp4` model from local path `~/models/Qwen3.6-35B-A3B-NVFP4`
+- `qwen36-nvfp4` model from Hugging Face `Qwen/Qwen3.6-35B-A3B-NVFP4` (local preloaded fallback with `--use-preloaded-models`)
 - `gemma4-nvfp4` model from Hugging Face `nvidia/Gemma-4-26B-A4B-NVFP4`
 - `ornith-nvfp4` model from Hugging Face `sakamakismile/Ornith-1.0-35B-NVFP4`
 
@@ -68,7 +68,7 @@ Use `--show-defaults` for a global profile overview without specifying a variant
 
 ```bash
 dgx-vllm-launcher [qwen36-fp8|qwen36-nvfp4|gemma4-nvfp4|ornith-nvfp4] [-r|--reasoning] [-w|--no-warmup] [-s|--no-smoke-check] [-d|--detach]
-                      [-p|--enable-prefix-caching] [-m|--moe-backend <name>] [-l|--linear-backend <name>] [-R|--restart-policy <policy>] [--show-defaults]
+                      [-p|--enable-prefix-caching] [-m|--moe-backend <name>] [-l|--linear-backend <name>] [--use-preloaded-models] [-R|--restart-policy <policy>] [--show-defaults]
 
 # Global default inspection
  dvl --show-defaults
@@ -77,11 +77,14 @@ dgx-vllm-launcher [qwen36-fp8|qwen36-nvfp4|gemma4-nvfp4|ornith-nvfp4] [-r|--reas
 - `qwen36-fp8`
   - serves Hugging Face model `Qwen/Qwen3.6-35B-A3B-FP8`
 - `qwen36-nvfp4`
-  - serves local model mounted as `/model` from `~/models/Qwen3.6-35B-A3B-NVFP4`
+  - serves Hugging Face model `Qwen/Qwen3.6-35B-A3B-NVFP4`
+  - if `--use-preloaded-models` is enabled, uses `~/models/Qwen3.6-35B-A3B-NVFP4` when present
 - `gemma4-nvfp4`
   - serves Hugging Face model `nvidia/Gemma-4-26B-A4B-NVFP4`
+  - if `--use-preloaded-models` is enabled, uses `~/models/Gemma-4-26B-A4B-NVFP4` when present
 - `ornith-nvfp4`
   - serves Hugging Face model `sakamakismile/Ornith-1.0-35B-NVFP4`
+  - if `--use-preloaded-models` is enabled, uses `~/models/Ornith-1.0-35B-NVFP4` when present
 
 ### Arguments
 
@@ -92,6 +95,7 @@ dgx-vllm-launcher [qwen36-fp8|qwen36-nvfp4|gemma4-nvfp4|ornith-nvfp4] [-r|--reas
 - `-p, --enable-prefix-caching`  Alias flag kept for compatibility (prefix caching is enabled by default)
 - `-m, --moe-backend <name>`  Pass-through to vLLM `--moe-backend` (defaults to `flashinfer_b12x` for `qwen36-nvfp4`; other variants default to `(none)`)
 - `--show-defaults`  Show the preferred default launch profile for each supported variant and exit
+- `--use-preloaded-models`  Prefer preloaded checkpoints from `~/models` when available; otherwise pull from Hugging Face Hub
 - `-l, --linear-backend <name>`  Pass-through to vLLM `--linear-backend`
 - `-R, --restart-policy <policy>`  Optional Docker restart policy (`on-failure`, `unless-stopped`, etc.)
 
@@ -129,7 +133,9 @@ docker stop vllm-ornith-nvfp4
 
 ## Environment variables
 
-- `HF_TOKEN` (required for `qwen36-fp8`)
+- `HF_TOKEN` (required for `qwen36-fp8`; optional for hosted models like `gemma4-nvfp4`/`ornith-nvfp4`; also honored from `HUGGING_FACE_HUB_TOKEN`)
+- `~/models` (default root for `--use-preloaded-models`): if present, mounts model checkpoint directory and serves `/model`
+- `~/.cache/huggingface` (mounted when HF auth token is injected)
 - `VLLM_WARMUP_REQUESTS` (default `2`)
 - `VLLM_READY_TIMEOUT` (default `1800`) applies to all variants
 - `VLLM_CACHE_DIR` (default `~/.cache/vllm`)
@@ -146,7 +152,7 @@ docker stop vllm-ornith-nvfp4
 | Variant | Model | Default MoE backend |
 |---|---|---|
 | `qwen36-fp8` | `Qwen/Qwen3.6-35B-A3B-FP8` | `(none)` |
-| `qwen36-nvfp4` | local `/model` (`~/models/Qwen3.6-35B-A3B-NVFP4`) | `flashinfer_b12x` |
+| `qwen36-nvfp4` | `Qwen/Qwen3.6-35B-A3B-NVFP4` | `flashinfer_b12x` |
 | `gemma4-nvfp4` | `nvidia/Gemma-4-26B-A4B-NVFP4` | `(none)` |
 | `ornith-nvfp4` | `sakamakismile/Ornith-1.0-35B-NVFP4` | `(none)` |
 
@@ -166,6 +172,7 @@ uv run dvl --show-defaults
 - For NVFP4 startup performance tuning, keep warmup enabled unless you intentionally want to skip it.
 - If Gemma 4 fails with `GELU_TANH`/`FLASHINFER_B12X` startup errors, launch without forcing `moe-backend` (or run with an explicit supported backend for your image).
   - Example: `uv run dvl gemma4-nvfp4` (no `--moe-backend`)
+- HF auth token is forwarded to Hugging Face-hosted variants (including Gemma/Ornith) when available, which avoids anonymous Hub warnings.
 - **Pi note:** Pi uses `tool_choice=auto` for tool calling; to support this with vLLM, start with `--reasoning`.
 
 ## Developer quickstart

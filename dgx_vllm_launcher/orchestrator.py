@@ -167,6 +167,7 @@ def build_start_command(
     moe_backend: str | None,
     linear_backend: str | None,
     hf_token: str | None,
+    use_preloaded_models: bool = False,
 ) -> list[str]:
     vllm_marin = os.environ.get("VLLM_MARLIN_USE_ATOMIC_ADD", "1")
     vllm_inductor = os.environ.get("VLLM_ENABLE_INDUCTOR_MAX_AUTOTUNE", "1")
@@ -196,9 +197,11 @@ def build_start_command(
     if restart_policy:
         cmd.extend(["--restart", restart_policy])
 
-    if profile.requires_hf_token:
-        if not hf_token:
-            raise RuntimeError("HF token required for fp8; set HF_TOKEN or run `huggingface-cli login` and retry")
+    needs_hf_token = profile.requires_hf_token or profile.inject_hf_token
+    if needs_hf_token and not hf_token:
+        if profile.requires_hf_token:
+            raise RuntimeError("HF token required for qwen36-fp8; set HF_TOKEN or run `huggingface-cli login` and retry")
+    if hf_token and needs_hf_token:
         hf_cache = os.path.expanduser("~/.cache/huggingface")
         cmd.extend(
             [
@@ -208,9 +211,11 @@ def build_start_command(
                 f"{hf_cache}:/root/.cache/huggingface",
             ]
         )
-    elif profile.mount_local_model and profile.local_model_path:
+    elif use_preloaded_models and profile.mount_local_model and profile.local_model_path:
         model_path = os.path.expanduser(profile.local_model_path)
-        cmd.extend(["-v", f"{model_path}:/model"])
+        if os.path.isdir(model_path):
+            cmd.extend(["-v", f"{model_path}:/model"])
+            model = "/model"
 
     if moe_backend:
         common_args = list(common_args)
@@ -235,9 +240,10 @@ def start_server(
     linear_backend: str | None,
     restart_policy: str | None,
     host_cache_dir: str,
+    use_preloaded_models: bool = False,
 ) -> str:
     profile = resolve_variant_profile(variant)
-    hf_token = _resolve_hf_token() if profile.requires_hf_token else None
+    hf_token = _resolve_hf_token() if (profile.requires_hf_token or profile.inject_hf_token) else None
 
     cmd = build_start_command(
         variant=variant,
@@ -250,6 +256,7 @@ def start_server(
         moe_backend=moe_backend,
         linear_backend=linear_backend,
         hf_token=hf_token,
+        use_preloaded_models=use_preloaded_models,
     )
 
     proc = run_docker(cmd, check=True, capture_output=True)
@@ -546,6 +553,7 @@ def run(args: LaunchArgs) -> int:
             linear_backend=resolved_linear_backend,
             restart_policy=args.restart_policy,
             host_cache_dir=host_cache_dir,
+            use_preloaded_models=args.use_preloaded_models,
         )
         started = True
 

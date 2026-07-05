@@ -17,6 +17,7 @@ class LaunchArgs:
     moe_backend: str | None = None
     linear_backend: str | None = None
     restart_policy: str | None = None
+    use_preloaded_models: bool = False
     show_defaults: bool = False
 
 
@@ -65,6 +66,11 @@ def parse_args(argv: list[str] | None = None) -> LaunchArgs:
         help="Optional Docker restart policy (for example: on-failure, unless-stopped)",
     )
     parser.add_argument(
+        "--use-preloaded-models",
+        action="store_true",
+        help="Prefer preloaded Hugging Face checkpoints in ~/models when they exist; otherwise pull from Hub.",
+    )
+    parser.add_argument(
         "--show-defaults",
         action="store_true",
         help="Print recommended per-variant default launch settings and exit.",
@@ -85,5 +91,6 @@ def parse_args(argv: list[str] | None = None) -> LaunchArgs:
         moe_backend=ns.moe_backend,
         linear_backend=ns.linear_backend,
         restart_policy=ns.restart_policy,
+        use_preloaded_models=ns.use_preloaded_models,
         show_defaults=ns.show_defaults,
     )

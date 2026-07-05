@@ -23,12 +23,6 @@ It includes:
 
 ## Quick start
 
-From repo root:
-
-```bash
-cd ~/projects/inference
-```
-
 Install dependencies (including dev tools):
 
 ```bash

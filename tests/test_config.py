@@ -72,6 +72,8 @@ def test_variant_profiles_are_complete():
 def test_variant_profiles_capture_expected_launch_hints():
     assert VARIANT_PROFILES["qwen36-fp8"].requires_hf_token is True
     assert VARIANT_PROFILES["qwen36-fp8"].quantization is None
+    assert VARIANT_PROFILES["qwen36-fp8"].runtime_defaults.reasoning_parser == "qwen3"
+    assert VARIANT_PROFILES["qwen36-fp8"].runtime_defaults.tool_call_parser == "qwen3_coder"
     assert VARIANT_PROFILES["qwen36-fp8"].inject_hf_token is True
 
     assert VARIANT_PROFILES["qwen36-nvfp4"].quantization == "modelopt"
@@ -84,6 +86,7 @@ def test_variant_profiles_capture_expected_launch_hints():
     assert VARIANT_PROFILES["gemma4-nvfp4"].default_moe_backend is None
     assert VARIANT_PROFILES["gemma4-nvfp4"].runtime_defaults.reasoning_parser == "gemma4"
     assert VARIANT_PROFILES["gemma4-nvfp4"].runtime_defaults.tool_call_parser == "gemma4"
+    assert "--limit-mm-per-prompt" in VARIANT_PROFILES["gemma4-nvfp4"].runtime_defaults.extra_vllm_args
     assert VARIANT_PROFILES["gemma4-nvfp4"].inject_hf_token is True
     assert VARIANT_PROFILES["gemma4-nvfp4"].mount_local_model is True
 
@@ -92,6 +95,7 @@ def test_variant_profiles_capture_expected_launch_hints():
     assert VARIANT_PROFILES["ornith-nvfp4"].inject_hf_token is True
     assert VARIANT_PROFILES["ornith-nvfp4"].mount_local_model is True
     assert VARIANT_PROFILES["ornith-nvfp4"].quantization == "modelopt"
+
 
 def test_resolve_preloaded_models_root_default():
     value = resolve_preloaded_models_root(env_getter=lambda key, default: default)

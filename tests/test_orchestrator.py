@@ -3,19 +3,23 @@ from __future__ import annotations
 from dataclasses import replace
 
 from dgx_vllm_launcher import cli
-from dgx_vllm_launcher.config import VARIANT_PROFILES
+from dgx_vllm_launcher.config import VARIANT_PROFILES, VariantRuntimeDefaults
 import dgx_vllm_launcher.orchestrator as orchestrator
 from dgx_vllm_launcher.orchestrator import (
-    build_common_args,
     build_start_command,
     run_warmup,
     smoke_check,
     wait_for_health,
 )
+from dgx_vllm_launcher.vllm_args import build_common_args
 
 
 def test_build_common_args_without_reasoning():
-    args = build_common_args("qwen36-fp8", reasoning=False)
+    args = build_common_args(
+        "qwen36-fp8",
+        reasoning=False,
+        runtime_defaults=VARIANT_PROFILES["qwen36-fp8"].runtime_defaults,
+    )
 
     assert "--served-model-name" in args
     assert "qwen36-fp8" in args
@@ -23,7 +27,11 @@ def test_build_common_args_without_reasoning():
 
 
 def test_build_common_args_with_reasoning():
-    args = build_common_args("qwen36-nvfp4", reasoning=True)
+    args = build_common_args(
+        "qwen36-nvfp4",
+        reasoning=True,
+        runtime_defaults=VARIANT_PROFILES["qwen36-nvfp4"].runtime_defaults,
+    )
 
     assert "--reasoning-parser" in args
     idx = args.index("--reasoning-parser")
@@ -34,12 +42,14 @@ def test_build_common_args_allows_variant_specific_tooling():
     args = build_common_args(
         "gemma4-nvfp4",
         reasoning=True,
-        reasoning_parser="gemma4",
-        tool_call_parser="gemma4",
-        chat_template="/vllm-workspace/examples/tool_chat_template_gemma4.jinja",
-        max_num_seqs=32,
-        max_num_batched_tokens=16384,
-        extra_args=("--limit-mm-per-prompt", '{"image":4,"video":0}'),
+        runtime_defaults=VariantRuntimeDefaults(
+            reasoning_parser="gemma4",
+            tool_call_parser="gemma4",
+            chat_template="/vllm-workspace/examples/tool_chat_template_gemma4.jinja",
+            max_num_seqs=32,
+            max_num_batched_tokens=16384,
+            extra_vllm_args=("--limit-mm-per-prompt", '{"image":4,"video":0}'),
+        ),
     )
 
     assert args[args.index("--reasoning-parser") + 1] == "gemma4"

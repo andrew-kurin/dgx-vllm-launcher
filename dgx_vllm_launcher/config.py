@@ -30,6 +30,8 @@ DEFAULT_ORNITH_NVFP4_IMAGE = DEFAULT_NVFP4_IMAGE
 
 DEFAULT_READY_TIMEOUT = 1800
 DEFAULT_VLLM_CACHE_DIR = "~/.cache/vllm"
+DEFAULT_MAX_NUM_SEQS = 256
+DEFAULT_MAX_NUM_BATCHED_TOKENS = 65536
 
 
 @dataclass(frozen=True)
@@ -42,12 +44,12 @@ class VariantRuntimeDefaults:
 
     moe_backend: str | None = None
     linear_backend: str | None = None
-    reasoning_parser: str = "qwen3"
-    tool_call_parser: str = "qwen3_coder"
+    reasoning_parser: str | None = None
+    tool_call_parser: str | None = None
     chat_template: str | None = None
-    max_num_seqs: int = 256
-    max_num_batched_tokens: int = 65536
-    extra_args: tuple[str, ...] = ()
+    max_num_seqs: int = DEFAULT_MAX_NUM_SEQS
+    max_num_batched_tokens: int = DEFAULT_MAX_NUM_BATCHED_TOKENS
+    extra_vllm_args: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -76,6 +78,37 @@ class VariantProfile:
         return self.runtime_defaults.linear_backend
 
 
+QWEN_RUNTIME_DEFAULTS = VariantRuntimeDefaults(
+    reasoning_parser="qwen3",
+    tool_call_parser="qwen3_coder",
+)
+
+QWEN_NVFP4_RUNTIME_DEFAULTS = VariantRuntimeDefaults(
+    moe_backend="flashinfer_b12x",
+    reasoning_parser="qwen3",
+    tool_call_parser="qwen3_coder",
+)
+
+GEMMA4_RUNTIME_DEFAULTS = VariantRuntimeDefaults(
+    # Gemma4 uses GELU_TANH in MoE blocks; the FlashInfer-B12X backend currently does
+    # not support this activation in several vLLM releases, so default MoE must be unset.
+    reasoning_parser="gemma4",
+    tool_call_parser="gemma4",
+    chat_template="/vllm-workspace/examples/tool_chat_template_gemma4.jinja",
+    max_num_seqs=32,
+    max_num_batched_tokens=16384,
+    extra_vllm_args=(
+        "--kv-cache-dtype",
+        "fp8",
+        "--limit-mm-per-prompt",
+        '{"image":4,"video":0}',
+        "--mm-processor-kwargs",
+        '{"max_soft_tokens":280}',
+        "--async-scheduling",
+    ),
+)
+
+
 VARIANT_PROFILES: dict[Variant, VariantProfile] = {
     "qwen36-fp8": VariantProfile(
         variant="qwen36-fp8",
@@ -84,7 +117,7 @@ VARIANT_PROFILES: dict[Variant, VariantProfile] = {
         default_image=DEFAULT_FP8_IMAGE,
         served_model_name="qwen36-fp8",
         startup_message="→ Serving Qwen/Qwen3.6-35B-A3B-FP8 from HuggingFace...",
-        runtime_defaults=VariantRuntimeDefaults(),
+        runtime_defaults=QWEN_RUNTIME_DEFAULTS,
         requires_hf_token=True,
         quantization=None,
         inject_hf_token=True,
@@ -96,7 +129,7 @@ VARIANT_PROFILES: dict[Variant, VariantProfile] = {
         default_image=DEFAULT_NVFP4_IMAGE,
         served_model_name="qwen36-nvfp4",
         startup_message="→ Serving Qwen3.6 NVFP4 from Hugging Face...",
-        runtime_defaults=VariantRuntimeDefaults(moe_backend="flashinfer_b12x"),
+        runtime_defaults=QWEN_NVFP4_RUNTIME_DEFAULTS,
         requires_hf_token=False,
         mount_local_model=True,
         local_model_path=QWEN_LOCAL_NVFP4_PATH,
@@ -110,24 +143,7 @@ VARIANT_PROFILES: dict[Variant, VariantProfile] = {
         default_image=DEFAULT_GEMMA4_NVFP4_IMAGE,
         served_model_name="gemma4-nvfp4",
         startup_message="→ Serving Gemma 4 26B A4B-NVFP4 from Hugging Face...",
-        # Gemma4 uses GELU_TANH in MoE blocks; the FlashInfer-B12X backend currently does
-        # not support this activation in several vLLM releases, so default must be unset.
-        runtime_defaults=VariantRuntimeDefaults(
-            reasoning_parser="gemma4",
-            tool_call_parser="gemma4",
-            chat_template="/vllm-workspace/examples/tool_chat_template_gemma4.jinja",
-            max_num_seqs=32,
-            max_num_batched_tokens=16384,
-            extra_args=(
-                "--kv-cache-dtype",
-                "fp8",
-                "--limit-mm-per-prompt",
-                '{"image":4,"video":0}',
-                "--mm-processor-kwargs",
-                '{"max_soft_tokens":280}',
-                "--async-scheduling",
-            ),
-        ),
+        runtime_defaults=GEMMA4_RUNTIME_DEFAULTS,
         requires_hf_token=False,
         local_model_path=GEMMA4_LOCAL_NVFP4_PATH,
         mount_local_model=True,
@@ -141,7 +157,7 @@ VARIANT_PROFILES: dict[Variant, VariantProfile] = {
         default_image=DEFAULT_ORNITH_NVFP4_IMAGE,
         served_model_name="ornith-nvfp4",
         startup_message="→ Serving Ornith 1.0 35B NVFP4 from Hugging Face...",
-        runtime_defaults=VariantRuntimeDefaults(),
+        runtime_defaults=QWEN_RUNTIME_DEFAULTS,
         requires_hf_token=False,
         local_model_path=ORNITH_LOCAL_NVFP4_PATH,
         mount_local_model=True,
@@ -158,18 +174,6 @@ class VariantConfig:
     image: str
     served_model_name: str
     ready_timeout_seconds: int
-
-
-@dataclass(frozen=True)
-class LaunchConfig:
-    variant: Variant
-    host_vllm_cache_dir: str
-    reasoning: bool
-    no_warmup: bool
-    moe_backend: str | None
-    linear_backend: str | None
-    restart_policy: str | None
-    variant_config: VariantConfig
 
 
 def resolve_variant_profile(variant: Variant) -> VariantProfile:

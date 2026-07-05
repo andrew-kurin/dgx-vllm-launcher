@@ -4,6 +4,7 @@ import os
 import signal
 import subprocess
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from threading import Thread
 from typing import Callable, Protocol
@@ -17,6 +18,8 @@ from .cli import LaunchArgs, parse_args
 from .config import (
     VARIANTS,
     Variant,
+    VariantConfig,
+    VariantProfile,
     resolve_cache_dir,
     resolve_env_int,
     resolve_preloaded_models_root,
@@ -24,15 +27,28 @@ from .config import (
     resolve_variant_profile,
 )
 from .docker_ops import (
+    container_logs,
+    container_running,
     inspect_container,
+    remove_container,
     run_docker,
+    stop_container,
     stream_container_logs,
 )
 from .http_ops import health_ok, request_completion
-from .docker_ops import container_logs, container_running, stop_container, remove_container
+from .vllm_args import build_common_args
 
 
 console = Console()
+
+
+@dataclass(frozen=True)
+class LaunchPlan:
+    variant_config: VariantConfig
+    profile: VariantProfile
+    warmup_requests: int
+    host_cache_dir: str
+    common_args: list[str]
 
 
 class _LogTailer(Protocol):
@@ -88,62 +104,6 @@ class LogTailer:
             self._reader.join(timeout=1)
 
         self._proc = None
-
-
-def build_common_args(
-    served_model_name: str,
-    reasoning: bool,
-    *,
-    reasoning_parser: str = "qwen3",
-    tool_call_parser: str = "qwen3_coder",
-    chat_template: str | None = None,
-    max_num_seqs: int = 256,
-    max_num_batched_tokens: int = 65536,
-    extra_args: tuple[str, ...] = (),
-) -> list[str]:
-    safetensors_load_strategy = os.environ.get("VLLM_SAFETENSORS_LOAD_STRATEGY", "prefetch")
-
-    args = [
-        "--host",
-        "0.0.0.0",
-        "--port",
-        "8000",
-        "--tensor-parallel-size",
-        "1",
-        "--gpu-memory-utilization",
-        "0.85",
-        "--max-model-len",
-        "131072",
-        "--max-num-seqs",
-        str(max_num_seqs),
-        "--max-num-batched-tokens",
-        str(max_num_batched_tokens),
-        "--enable-prefix-caching",
-        "--enable-flashinfer-autotune",
-        "--safetensors-load-strategy",
-        safetensors_load_strategy,
-        "--generation-config",
-        "vllm",
-        "--trust-remote-code",
-        "--served-model-name",
-        served_model_name,
-    ]
-
-    if reasoning:
-        args.extend(
-            [
-                "--reasoning-parser",
-                reasoning_parser,
-                "--enable-auto-tool-choice",
-                "--tool-call-parser",
-                tool_call_parser,
-            ]
-        )
-        if chat_template:
-            args.extend(["--chat-template", chat_template])
-
-    args.extend(extra_args)
-    return args
 
 
 def _resolve_hf_token() -> str | None:
@@ -227,7 +187,7 @@ def build_start_command(
     needs_hf_token = profile.requires_hf_token or profile.inject_hf_token
     if needs_hf_token and not hf_token:
         if profile.requires_hf_token:
-            raise RuntimeError("HF token required for qwen36-fp8; set HF_TOKEN or run `huggingface-cli login` and retry")
+            raise RuntimeError(f"HF token required for {variant}; set HF_TOKEN or run `huggingface-cli login` and retry")
     if hf_token and needs_hf_token:
         hf_cache = os.path.expanduser("~/.cache/huggingface")
         cmd.extend(
@@ -521,7 +481,7 @@ def _signal_to_keyboard_interrupt(_signum: int, _frame) -> None:
     raise KeyboardInterrupt
 
 
-def _build_launch_config(args: LaunchArgs):
+def _build_launch_config(args: LaunchArgs) -> LaunchPlan:
     variant = args.variant
     if variant is None:
         raise RuntimeError("variant is required unless --show-defaults is set")
@@ -533,17 +493,18 @@ def _build_launch_config(args: LaunchArgs):
     common_args = build_common_args(
         variant_config.served_model_name,
         args.reasoning,
-        reasoning_parser=profile.runtime_defaults.reasoning_parser,
-        tool_call_parser=profile.runtime_defaults.tool_call_parser,
-        chat_template=profile.runtime_defaults.chat_template,
-        max_num_seqs=profile.runtime_defaults.max_num_seqs,
-        max_num_batched_tokens=profile.runtime_defaults.max_num_batched_tokens,
-        extra_args=profile.runtime_defaults.extra_args,
+        profile.runtime_defaults,
     )
     if profile.quantization:
         common_args.extend(["--quantization", profile.quantization])
 
-    return variant_config, profile, warmup_requests, host_cache_dir, common_args
+    return LaunchPlan(
+        variant_config=variant_config,
+        profile=profile,
+        warmup_requests=warmup_requests,
+        host_cache_dir=host_cache_dir,
+        common_args=common_args,
+    )
 
 
 def run(args: LaunchArgs) -> int:
@@ -558,17 +519,17 @@ def run(args: LaunchArgs) -> int:
     if variant is None:
         raise RuntimeError("variant is required unless --show-defaults is set")
 
-    variant_config, profile, warmup_requests, host_cache_dir, common_args = _build_launch_config(args)
+    plan = _build_launch_config(args)
     container_name = f"vllm-{variant}"
-    timeout_seconds = variant_config.ready_timeout_seconds
-    Path(host_cache_dir).mkdir(parents=True, exist_ok=True)
+    timeout_seconds = plan.variant_config.ready_timeout_seconds
+    Path(plan.host_cache_dir).mkdir(parents=True, exist_ok=True)
 
     print_summary(
         variant=variant,
-        model=variant_config.model,
-        image=variant_config.image,
-        served_name=variant_config.served_model_name,
-        common_args=common_args,
+        model=plan.variant_config.model,
+        image=plan.variant_config.image,
+        served_name=plan.variant_config.served_model_name,
+        common_args=plan.common_args,
         restart_policy=args.restart_policy,
     )
 
@@ -577,28 +538,28 @@ def run(args: LaunchArgs) -> int:
     started = False
     cleanup_container = True
     try:
-        console.print(f"[green]{profile.startup_message}[/green]")
+        console.print(f"[green]{plan.profile.startup_message}[/green]")
 
         resolved_moe_backend = args.moe_backend
         if resolved_moe_backend is None:
-            resolved_moe_backend = profile.default_moe_backend
+            resolved_moe_backend = plan.profile.default_moe_backend
 
         resolved_linear_backend = args.linear_backend
         if resolved_linear_backend is None:
-            resolved_linear_backend = profile.default_linear_backend
+            resolved_linear_backend = plan.profile.default_linear_backend
 
         preloaded_models_dir = resolve_preloaded_models_root(args.preloaded_models_dir)
 
         container_id = start_server(
             variant=variant,
-            image=variant_config.image,
-            model=variant_config.model,
+            image=plan.variant_config.image,
+            model=plan.variant_config.model,
             container_name=container_name,
-            common_args=common_args,
+            common_args=plan.common_args,
             moe_backend=resolved_moe_backend,
             linear_backend=resolved_linear_backend,
             restart_policy=args.restart_policy,
-            host_cache_dir=host_cache_dir,
+            host_cache_dir=plan.host_cache_dir,
             use_preloaded_models=args.use_preloaded_models,
             preloaded_models_dir=preloaded_models_dir,
         )
@@ -612,9 +573,9 @@ def run(args: LaunchArgs) -> int:
             return 1
 
         console.print("[green]Service is healthy. Running warmup + smoke readiness checks.[/green]")
-        run_warmup(variant_config.served_model_name, warmup_requests, container_name)
+        run_warmup(plan.variant_config.served_model_name, plan.warmup_requests, container_name)
         if not args.no_smoke_check:
-            smoke_check(variant_config.served_model_name, container_name)
+            smoke_check(plan.variant_config.served_model_name, container_name)
 
         if args.detach:
             cleanup_container = False

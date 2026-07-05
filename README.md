@@ -104,8 +104,8 @@ docker stop vllm-nvfp4
 
 - `HF_TOKEN` (required for `fp8`)
 - `VLLM_WARMUP_REQUESTS` (default `2`)
-- `VLLM_READY_TIMEOUT_FP8` (default `1800`)
-- `VLLM_READY_TIMEOUT_NVFP4` (default `1800`)
+- `VLLM_READY_TIMEOUT` (default `1800`) applies to both `fp8` and `nvfp4`
+- Backward-compatible legacy envs: `VLLM_READY_TIMEOUT_FP8`, `VLLM_READY_TIMEOUT_NVFP4`
 - `VLLM_CACHE_DIR` (default `~/.cache/vllm`)
 - `VLLM_IMAGE_FP8` (default `vllm/vllm-openai:nightly`)
 - `VLLM_IMAGE_NVFP4` (default `vllm/vllm-openai@sha256:7feb2a09304e3b2d38e224a100316e84fe3205faa7605060609e2c02179cbca6`)

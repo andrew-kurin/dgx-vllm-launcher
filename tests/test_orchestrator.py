@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from qwen_vllm_launcher import cli
+import qwen_vllm_launcher.orchestrator as orchestrator
 from qwen_vllm_launcher.orchestrator import (
     build_common_args,
     build_start_command,
@@ -159,3 +161,97 @@ def test_wait_for_health_container_exits():
     )
 
     assert ok is False
+
+
+def test_run_detach_mode_keeps_container_running(monkeypatch, tmp_path):
+    calls = {
+        "remove": 0,
+        "stream": 0,
+    }
+
+    def fake_start_server(**_kwargs: object) -> str:
+        return "container-id"
+
+    def fake_wait_for_health(name: str, _timeout_seconds: int, **_kwargs: object) -> bool:
+        assert name == "vllm-nvfp4"
+        return True
+
+    def fake_remove_container(_name: str) -> None:
+        calls["remove"] += 1
+
+    def fake_stream_logs(_name: str, **_kwargs: object) -> int:
+        calls["stream"] += 1
+        raise AssertionError("stream_logs_forever should not run in detach mode")
+
+    monkeypatch.setenv("VLLM_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setattr(orchestrator, "start_server", fake_start_server)
+    monkeypatch.setattr(orchestrator, "wait_for_health", fake_wait_for_health)
+    monkeypatch.setattr(orchestrator, "run_warmup", lambda *args, **kwargs: None)
+    monkeypatch.setattr(orchestrator, "smoke_check", lambda *args, **kwargs: None)
+    monkeypatch.setattr(orchestrator, "stream_logs_forever", fake_stream_logs)
+    monkeypatch.setattr(orchestrator, "remove_container_if_exists", fake_remove_container)
+
+    args = cli.LaunchArgs(
+        variant="nvfp4",
+        reasoning=False,
+        no_warmup=False,
+        no_smoke_check=False,
+        enable_prefix_caching=False,
+        detach=True,
+        moe_backend=None,
+        linear_backend=None,
+        restart_policy=None,
+    )
+
+    code = orchestrator.run(args)
+
+    assert code == 0
+    assert calls["stream"] == 0
+    assert calls["remove"] == 1
+
+
+def test_run_stream_mode_stops_container_on_exit(monkeypatch, tmp_path):
+    calls = {
+        "remove": 0,
+        "stream": 0,
+    }
+
+    def fake_start_server(**_kwargs: object) -> str:
+        return "container-id"
+
+    def fake_wait_for_health(name: str, _timeout_seconds: int, **_kwargs: object) -> bool:
+        assert name == "vllm-fp8"
+        return True
+
+    def fake_remove_container(_name: str) -> None:
+        calls["remove"] += 1
+
+    def fake_stream_logs(_name: str, **_kwargs: object) -> int:
+        calls["stream"] += 1
+        return 0
+
+    monkeypatch.setenv("VLLM_CACHE_DIR", str(tmp_path / "cache2"))
+    monkeypatch.setattr(orchestrator, "start_server", fake_start_server)
+    monkeypatch.setattr(orchestrator, "wait_for_health", fake_wait_for_health)
+    monkeypatch.setattr(orchestrator, "run_warmup", lambda *args, **kwargs: None)
+    monkeypatch.setattr(orchestrator, "smoke_check", lambda *args, **kwargs: None)
+    monkeypatch.setattr(orchestrator, "stream_logs_forever", fake_stream_logs)
+    monkeypatch.setattr(orchestrator, "remove_container_if_exists", fake_remove_container)
+
+    args = cli.LaunchArgs(
+        variant="fp8",
+        reasoning=False,
+        no_warmup=False,
+        no_smoke_check=False,
+        enable_prefix_caching=False,
+        detach=False,
+        moe_backend=None,
+        linear_backend=None,
+        restart_policy=None,
+    )
+
+    code = orchestrator.run(args)
+
+    assert code == 0
+    assert calls["stream"] == 1
+    assert calls["remove"] == 2

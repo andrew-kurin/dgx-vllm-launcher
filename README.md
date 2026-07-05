@@ -16,7 +16,7 @@ It includes:
 - Container readiness checks (`/health`)
 - Optional startup warmup
 - Smoke check request
-- Automatic container cleanup on exit
+- Automatic container cleanup on exit (foreground mode)
 
 ## Quick start
 
@@ -48,8 +48,8 @@ uv run python -m qwen_vllm_launcher fp8
 ## Command-line usage
 
 ```bash
-qwen-vllm-launcher <fp8|nvfp4> [--reasoning] [--no-warmup] [--no-smoke-check] [--enable-prefix-caching]
-                      [--moe-backend <name>] [--linear-backend <name>] [--restart-policy <policy>]
+qwen-vllm-launcher <fp8|nvfp4> [--reasoning] [--no-warmup] [--no-smoke-check] [--detach]
+                      [--enable-prefix-caching] [--moe-backend <name>] [--linear-backend <name>] [--restart-policy <policy>]
 ```
 
 - `fp8`
@@ -62,10 +62,31 @@ qwen-vllm-launcher <fp8|nvfp4> [--reasoning] [--no-warmup] [--no-smoke-check] [-
 - `--reasoning`  Enable Qwen reasoning parser + auto tool choice
 - `--no-warmup`  Skip startup warmup requests
 - `--no-smoke-check`  Skip post-startup smoke check request
+- `--detach`  Exit after health/warmup/smoke checks, leaving container running in Docker
 - `--enable-prefix-caching`  Alias flag kept for compatibility (prefix caching is enabled by default)
 - `--moe-backend <name>`  Pass-through to vLLM `--moe-backend`
 - `--linear-backend <name>`  Pass-through to vLLM `--linear-backend`
 - `--restart-policy <policy>`  Optional Docker restart policy (`on-failure`, `unless-stopped`, etc.)
+
+### Detached service mode
+
+- `--detach` starts the container, waits for health + warmup + smoke checks, then exits.
+- The container keeps running independently with Docker so it survives your shell exiting.
+- Use `--restart-policy unless-stopped` or `always` for automatic restarts on machine/daemon restart.
+
+Example:
+
+```bash
+qwen-vllm-launcher nvfp4 --reasoning --detach --restart-policy unless-stopped
+```
+
+Service management:
+
+```bash
+docker ps -f name=vllm-nvfp4
+docker logs -f vllm-nvfp4
+docker stop vllm-nvfp4
+```
 
 ## Environment variables
 
@@ -86,6 +107,7 @@ qwen-vllm-launcher <fp8|nvfp4> [--reasoning] [--no-warmup] [--no-smoke-check] [-
   - `qwen36-fp8`
   - `qwen36-nvfp4`
 - For NVFP4 startup performance tuning, keep warmup enabled unless you intentionally want to skip it.
+- **Pi note:** Pi uses `tool_choice=auto` for tool calling; to support this with vLLM, start with `--reasoning`.
 
 ## Developer quickstart
 

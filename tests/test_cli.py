@@ -11,6 +11,7 @@ def test_parse_args_fp8_defaults():
     assert args.no_warmup is False
     assert args.no_smoke_check is False
     assert args.enable_prefix_caching is False
+    assert args.detach is False
     assert args.moe_backend is None
     assert args.linear_backend is None
     assert args.restart_policy is None
@@ -23,6 +24,7 @@ def test_parse_args_flags():
             "--reasoning",
             "--no-warmup",
             "--no-smoke-check",
+            "--detach",
             "--enable-prefix-caching",
             "--moe-backend",
             "flashinfer_b12x",
@@ -37,6 +39,7 @@ def test_parse_args_flags():
     assert args.reasoning is True
     assert args.no_warmup is True
     assert args.no_smoke_check is True
+    assert args.detach is True
     assert args.enable_prefix_caching is True
     assert args.moe_backend == "flashinfer_b12x"
     assert args.linear_backend == "flashinfer"

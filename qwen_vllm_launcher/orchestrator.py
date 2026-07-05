@@ -463,6 +463,7 @@ def run(args: LaunchArgs) -> int:
     remove_container_if_exists(container_name)
 
     started = False
+    cleanup_container = True
     try:
         if args.variant == "fp8":
             message = f"→ Serving {MODEL_BASE}-FP8 from HuggingFace..."
@@ -496,6 +497,16 @@ def run(args: LaunchArgs) -> int:
         if not args.no_smoke_check:
             smoke_check(variant_config.served_model_name, container_name)
 
+        if args.detach:
+            cleanup_container = False
+            console.print("\n[green]Startup checks passed; container is now running in detached mode.[/green]")
+            console.print(f"[blue]Service container:[/] vllm-{args.variant}")
+            console.print(f"[blue]Tail logs with:[/] docker logs -f vllm-{args.variant}")
+            console.print(f"[blue]Stop container with:[/] docker stop vllm-{args.variant}")
+            if args.restart_policy:
+                console.print(f"[blue]Restart policy:[/] {args.restart_policy} (Docker will attempt restart on failures/restarts).[/blue]")
+            return 0
+
         console.print("\n[blue]Streaming logs. Press Ctrl-C to stop; container will be stopped.[/blue]")
         return stream_logs_forever(container_name)
     except KeyboardInterrupt:
@@ -505,7 +516,7 @@ def run(args: LaunchArgs) -> int:
         console.print(f"[red]Error:[/] {exc}")
         return 1
     finally:
-        if started:
+        if started and cleanup_container:
             remove_container_if_exists(container_name)
 
 

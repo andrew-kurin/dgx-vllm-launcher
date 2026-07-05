@@ -13,6 +13,7 @@ class LaunchArgs:
     no_warmup: bool = False
     no_smoke_check: bool = False
     enable_prefix_caching: bool = False
+    detach: bool = False
     moe_backend: str | None = None
     linear_backend: str | None = None
     restart_policy: str | None = None
@@ -36,6 +37,11 @@ def parse_args(argv: list[str] | None = None) -> LaunchArgs:
         help="Skip post-startup smoke check",
     )
     parser.add_argument(
+        "--detach",
+        action="store_true",
+        help="Run startup checks then exit, leaving container running",
+    )
+    parser.add_argument(
         "--enable-prefix-caching",
         action="store_true",
         help="Alias/no-op; prefix caching is enabled by default.",
@@ -55,6 +61,7 @@ def parse_args(argv: list[str] | None = None) -> LaunchArgs:
         no_warmup=ns.no_warmup,
         no_smoke_check=ns.no_smoke_check,
         enable_prefix_caching=ns.enable_prefix_caching,
+        detach=ns.detach,
         moe_backend=ns.moe_backend,
         linear_backend=ns.linear_backend,
         restart_policy=ns.restart_policy,

@@ -15,6 +15,7 @@ from rich.table import Table
 
 from .cli import LaunchArgs, parse_args
 from .config import (
+    VARIANTS,
     Variant,
     resolve_cache_dir,
     resolve_env_int,
@@ -437,6 +438,27 @@ def print_summary(
         console.print(_format_common_args(common_args))
 
 
+def print_default_launch_profiles() -> None:
+    table = Table(title="Default launch configuration by variant", box=box.ROUNDED)
+    table.add_column("Variant", style="cyan")
+    table.add_column("Model", style="magenta")
+    table.add_column("Default MoE backend", style="yellow")
+    table.add_column("Default linear backend", style="yellow")
+    table.add_column("Quantization", style="blue")
+
+    for variant in VARIANTS:
+        profile = resolve_variant_profile(variant)
+        table.add_row(
+            variant,
+            profile.model,
+            profile.default_moe_backend or "(none)",
+            profile.default_linear_backend or "(none)",
+            profile.quantization or "(none)",
+        )
+
+    console.print(Panel(table, title="Recommended defaults", expand=False))
+
+
 def stream_logs_forever(name: str, *, tail: int | None = 20) -> int:
     proc = stream_container_logs(name, tail=tail)
     try:
@@ -458,8 +480,12 @@ def _signal_to_keyboard_interrupt(_signum: int, _frame) -> None:
 
 
 def _build_launch_config(args: LaunchArgs):
-    variant_config = resolve_variant_config(args.variant)
-    profile = resolve_variant_profile(args.variant)
+    variant = args.variant
+    if variant is None:
+        raise RuntimeError("variant is required unless --show-defaults is set")
+
+    variant_config = resolve_variant_config(variant)
+    profile = resolve_variant_profile(variant)
     warmup_requests = 0 if args.no_warmup else resolve_env_int("VLLM_WARMUP_REQUESTS", 2)
     host_cache_dir = resolve_cache_dir()
     common_args = build_common_args(variant_config.served_model_name, args.reasoning)
@@ -473,13 +499,21 @@ def run(args: LaunchArgs) -> int:
     signal.signal(signal.SIGINT, _signal_to_keyboard_interrupt)
     signal.signal(signal.SIGTERM, _signal_to_keyboard_interrupt)
 
+    if args.show_defaults:
+        print_default_launch_profiles()
+        return 0
+
+    variant = args.variant
+    if variant is None:
+        raise RuntimeError("variant is required unless --show-defaults is set")
+
     variant_config, profile, warmup_requests, host_cache_dir, common_args = _build_launch_config(args)
-    container_name = f"vllm-{args.variant}"
+    container_name = f"vllm-{variant}"
     timeout_seconds = variant_config.ready_timeout_seconds
     Path(host_cache_dir).mkdir(parents=True, exist_ok=True)
 
     print_summary(
-        variant=args.variant,
+        variant=variant,
         model=variant_config.model,
         image=variant_config.image,
         served_name=variant_config.served_model_name,
@@ -498,14 +532,18 @@ def run(args: LaunchArgs) -> int:
         if resolved_moe_backend is None:
             resolved_moe_backend = profile.default_moe_backend
 
+        resolved_linear_backend = args.linear_backend
+        if resolved_linear_backend is None:
+            resolved_linear_backend = profile.default_linear_backend
+
         container_id = start_server(
-            variant=args.variant,
+            variant=variant,
             image=variant_config.image,
             model=variant_config.model,
             container_name=container_name,
             common_args=common_args,
             moe_backend=resolved_moe_backend,
-            linear_backend=args.linear_backend,
+            linear_backend=resolved_linear_backend,
             restart_policy=args.restart_policy,
             host_cache_dir=host_cache_dir,
         )
@@ -526,9 +564,9 @@ def run(args: LaunchArgs) -> int:
         if args.detach:
             cleanup_container = False
             console.print("\n[green]Startup checks passed; container is now running in detached mode.[/green]")
-            console.print(f"[blue]Service container:[/] vllm-{args.variant}")
-            console.print(f"[blue]Tail logs with:[/] docker logs -f vllm-{args.variant}")
-            console.print(f"[blue]Stop container with:[/] docker stop vllm-{args.variant}")
+            console.print(f"[blue]Service container:[/] vllm-{variant}")
+            console.print(f"[blue]Tail logs with:[/] docker logs -f vllm-{variant}")
+            console.print(f"[blue]Stop container with:[/] docker stop vllm-{variant}")
             if args.restart_policy:
                 console.print(f"[blue]Restart policy:[/] {args.restart_policy} (Docker will attempt restart on failures/restarts).[/blue]")
             return 0

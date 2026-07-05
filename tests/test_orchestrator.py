@@ -297,6 +297,35 @@ def test_run_stream_mode_stops_container_on_exit(monkeypatch, tmp_path):
     assert calls["remove"] == 2
 
 
+def test_run_show_defaults_without_starting_container(monkeypatch, tmp_path):
+    calls = {"printed": 0}
+
+    def fail_start_server(**_kwargs: object) -> str:
+        raise AssertionError("start_server should not be called when --show-defaults is set")
+
+    monkeypatch.setattr(orchestrator, "print_default_launch_profiles", lambda: calls.__setitem__("printed", calls["printed"] + 1))
+    monkeypatch.setattr(orchestrator, "start_server", fail_start_server)
+    monkeypatch.setenv("VLLM_CACHE_DIR", str(tmp_path / "cache-defaults"))
+
+    args = cli.LaunchArgs(
+        variant="qwen36-fp8",
+        reasoning=False,
+        no_warmup=False,
+        no_smoke_check=False,
+        enable_prefix_caching=False,
+        detach=False,
+        moe_backend=None,
+        linear_backend=None,
+        restart_policy=None,
+        show_defaults=True,
+    )
+
+    code = orchestrator.run(args)
+
+    assert code == 0
+    assert calls["printed"] == 1
+
+
 def test_run_qwen36_nvfp4_defaults_moe_backend(monkeypatch, tmp_path):
     captured_kwargs = {}
 
@@ -334,7 +363,7 @@ def test_run_qwen36_nvfp4_defaults_moe_backend(monkeypatch, tmp_path):
     assert captured_kwargs["moe_backend"] == "flashinfer_b12x"
 
 
-def test_run_gemma4_defaults_moe_backend(monkeypatch, tmp_path):
+def test_run_gemma4_no_default_moe_backend(monkeypatch, tmp_path):
     captured_kwargs = {}
 
     def fake_start_server(**kwargs: object) -> str:
@@ -368,7 +397,7 @@ def test_run_gemma4_defaults_moe_backend(monkeypatch, tmp_path):
     code = orchestrator.run(args)
 
     assert code == 0
-    assert captured_kwargs["moe_backend"] == "flashinfer_b12x"
+    assert captured_kwargs["moe_backend"] is None
     assert captured_kwargs["model"] == "nvidia/Gemma-4-26B-A4B-NVFP4"
 
 
@@ -409,7 +438,45 @@ def test_run_qwen36_fp8_does_not_set_default_moe_backend(monkeypatch, tmp_path):
     assert captured_kwargs["moe_backend"] is None
 
 
-def test_run_ornith_defaults_moe_backend(monkeypatch, tmp_path):
+def test_run_gemma4_allows_explicit_moe_backend(monkeypatch, tmp_path):
+    captured_kwargs = {}
+
+    def fake_start_server(**kwargs: object) -> str:
+        captured_kwargs.update(kwargs)
+        return "container-id"
+
+    def fake_wait_for_health(name: str, _timeout_seconds: int, **_kwargs: object) -> bool:
+        assert name == "vllm-gemma4-nvfp4"
+        return True
+
+    monkeypatch.setenv("VLLM_CACHE_DIR", str(tmp_path / "cache-gemma4-explicit"))
+    monkeypatch.setattr(orchestrator, "start_server", fake_start_server)
+    monkeypatch.setattr(orchestrator, "wait_for_health", fake_wait_for_health)
+    monkeypatch.setattr(orchestrator, "run_warmup", lambda *args, **kwargs: None)
+    monkeypatch.setattr(orchestrator, "smoke_check", lambda *args, **kwargs: None)
+    monkeypatch.setattr(orchestrator, "stream_logs_forever", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(orchestrator, "remove_container_if_exists", lambda _name: None)
+
+    args = cli.LaunchArgs(
+        variant="gemma4-nvfp4",
+        reasoning=False,
+        no_warmup=False,
+        no_smoke_check=False,
+        enable_prefix_caching=False,
+        detach=False,
+        moe_backend="flashinfer_b12x",
+        linear_backend=None,
+        restart_policy=None,
+    )
+
+    code = orchestrator.run(args)
+
+    assert code == 0
+    assert captured_kwargs["moe_backend"] == "flashinfer_b12x"
+    assert captured_kwargs["model"] == "nvidia/Gemma-4-26B-A4B-NVFP4"
+
+
+def test_run_ornith_no_default_moe_backend(monkeypatch, tmp_path):
     captured_kwargs = {}
 
     def fake_start_server(**kwargs: object) -> str:
@@ -443,7 +510,7 @@ def test_run_ornith_defaults_moe_backend(monkeypatch, tmp_path):
     code = orchestrator.run(args)
 
     assert code == 0
-    assert captured_kwargs["moe_backend"] == "flashinfer_b12x"
+    assert captured_kwargs["moe_backend"] is None
     assert captured_kwargs["model"] == "sakamakismile/Ornith-1.0-35B-NVFP4"
 
 

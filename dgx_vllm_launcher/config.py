@@ -28,6 +28,18 @@ DEFAULT_VLLM_CACHE_DIR = "~/.cache/vllm"
 
 
 @dataclass(frozen=True)
+class VariantRuntimeDefaults:
+    """Best-known vLLM defaults for a variant.
+
+    This keeps launch-time behavior explicit and discoverable while still allowing
+    every value to be overridden via CLI flags.
+    """
+
+    moe_backend: str | None = None
+    linear_backend: str | None = None
+
+
+@dataclass(frozen=True)
 class VariantProfile:
     """Static per-variant metadata used by the launcher."""
 
@@ -37,11 +49,19 @@ class VariantProfile:
     default_image: str
     served_model_name: str
     startup_message: str
-    default_moe_backend: str | None
+    runtime_defaults: VariantRuntimeDefaults
     requires_hf_token: bool
     mount_local_model: bool = False
     local_model_path: str | None = None
     quantization: str | None = None
+
+    @property
+    def default_moe_backend(self) -> str | None:
+        return self.runtime_defaults.moe_backend
+
+    @property
+    def default_linear_backend(self) -> str | None:
+        return self.runtime_defaults.linear_backend
 
 
 VARIANT_PROFILES: dict[Variant, VariantProfile] = {
@@ -52,7 +72,7 @@ VARIANT_PROFILES: dict[Variant, VariantProfile] = {
         default_image=DEFAULT_FP8_IMAGE,
         served_model_name="qwen36-fp8",
         startup_message="→ Serving Qwen/Qwen3.6-35B-A3B-FP8 from HuggingFace...",
-        default_moe_backend=None,
+        runtime_defaults=VariantRuntimeDefaults(),
         requires_hf_token=True,
         quantization=None,
     ),
@@ -63,7 +83,7 @@ VARIANT_PROFILES: dict[Variant, VariantProfile] = {
         default_image=DEFAULT_NVFP4_IMAGE,
         served_model_name="qwen36-nvfp4",
         startup_message="→ Serving local Qwen3.6 NVFP4 model...",
-        default_moe_backend="flashinfer_b12x",
+        runtime_defaults=VariantRuntimeDefaults(moe_backend="flashinfer_b12x"),
         requires_hf_token=False,
         mount_local_model=True,
         local_model_path=QWEN_LOCAL_NVFP4_PATH,
@@ -76,7 +96,9 @@ VARIANT_PROFILES: dict[Variant, VariantProfile] = {
         default_image=DEFAULT_GEMMA4_NVFP4_IMAGE,
         served_model_name="gemma4-nvfp4",
         startup_message="→ Serving Gemma 4 26B A4B-NVFP4 from Hugging Face...",
-        default_moe_backend="flashinfer_b12x",
+        # Gemma4 uses GELU_TANH in MoE blocks; the FlashInfer-B12X backend currently does
+        # not support this activation in several vLLM releases, so default must be unset.
+        runtime_defaults=VariantRuntimeDefaults(),
         requires_hf_token=False,
         quantization="modelopt",
     ),
@@ -87,7 +109,7 @@ VARIANT_PROFILES: dict[Variant, VariantProfile] = {
         default_image=DEFAULT_ORNITH_NVFP4_IMAGE,
         served_model_name="ornith-nvfp4",
         startup_message="→ Serving Ornith 1.0 35B NVFP4 from Hugging Face...",
-        default_moe_backend="flashinfer_b12x",
+        runtime_defaults=VariantRuntimeDefaults(),
         requires_hf_token=False,
         quantization="modelopt",
     ),

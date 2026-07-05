@@ -70,8 +70,11 @@ def test_variant_profiles_capture_expected_launch_hints():
     assert VARIANT_PROFILES["qwen36-fp8"].quantization is None
     assert VARIANT_PROFILES["qwen36-nvfp4"].quantization == "modelopt"
     assert VARIANT_PROFILES["qwen36-nvfp4"].mount_local_model is True
+    assert VARIANT_PROFILES["qwen36-nvfp4"].default_moe_backend == "flashinfer_b12x"
     assert VARIANT_PROFILES["gemma4-nvfp4"].requires_hf_token is False
+    assert VARIANT_PROFILES["gemma4-nvfp4"].default_moe_backend is None
     assert VARIANT_PROFILES["ornith-nvfp4"].requires_hf_token is False
+    assert VARIANT_PROFILES["ornith-nvfp4"].default_moe_backend is None
     assert VARIANT_PROFILES["ornith-nvfp4"].quantization == "modelopt"
 
 

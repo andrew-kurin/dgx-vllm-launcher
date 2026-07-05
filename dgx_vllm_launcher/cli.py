@@ -8,7 +8,7 @@ from .config import VARIANTS, Variant
 
 @dataclass(frozen=True)
 class LaunchArgs:
-    variant: Variant
+    variant: Variant | None
     reasoning: bool = False
     no_warmup: bool = False
     no_smoke_check: bool = False
@@ -17,6 +17,7 @@ class LaunchArgs:
     moe_backend: str | None = None
     linear_backend: str | None = None
     restart_policy: str | None = None
+    show_defaults: bool = False
 
 
 def parse_args(argv: list[str] | None = None) -> LaunchArgs:
@@ -27,9 +28,15 @@ def parse_args(argv: list[str] | None = None) -> LaunchArgs:
     parser.add_argument(
         "variant",
         choices=list(VARIANTS),
+        nargs="?",
         help=", ".join(VARIANTS),
     )
-    parser.add_argument("-r", "--reasoning", action="store_true", help="Enable Qwen reasoning parser + tool-choice path")
+    parser.add_argument(
+        "-r",
+        "--reasoning",
+        action="store_true",
+        help="Enable Qwen reasoning parser + tool-choice path",
+    )
     parser.add_argument("-w", "--no-warmup", action="store_true", help="Skip pre-startup warmup requests")
     parser.add_argument(
         "-s",
@@ -57,8 +64,17 @@ def parse_args(argv: list[str] | None = None) -> LaunchArgs:
         type=str,
         help="Optional Docker restart policy (for example: on-failure, unless-stopped)",
     )
+    parser.add_argument(
+        "--show-defaults",
+        action="store_true",
+        help="Print recommended per-variant default launch settings and exit.",
+    )
 
     ns = parser.parse_args(argv)
+
+    if not ns.show_defaults and ns.variant is None:
+        parser.error("the following arguments are required: variant")
+
     return LaunchArgs(
         variant=ns.variant,
         reasoning=ns.reasoning,
@@ -69,4 +85,5 @@ def parse_args(argv: list[str] | None = None) -> LaunchArgs:
         moe_backend=ns.moe_backend,
         linear_backend=ns.linear_backend,
         restart_policy=ns.restart_policy,
+        show_defaults=ns.show_defaults,
     )

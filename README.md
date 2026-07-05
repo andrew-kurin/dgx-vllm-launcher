@@ -61,13 +61,17 @@ uv run python -m dgx_vllm_launcher qwen36-fp8
 ## Command-line usage
 
 All commands below accept any of:
-`dgx-vllm-launcher`, `dgxvllm`, or `dvl`
-where the variant is one of:
+`dgx-vllm-launcher`, `dgxvllm`, or `dvl`.
+Most commands require a variant of:
 `qwen36-fp8`, `qwen36-nvfp4`, `gemma4-nvfp4`, or `ornith-nvfp4`.
+Use `--show-defaults` for a global profile overview without specifying a variant.
 
 ```bash
-dgx-vllm-launcher <qwen36-fp8|qwen36-nvfp4|gemma4-nvfp4|ornith-nvfp4> [-r|--reasoning] [-w|--no-warmup] [-s|--no-smoke-check] [-d|--detach]
-                      [-p|--enable-prefix-caching] [-m|--moe-backend <name>] [-l|--linear-backend <name>] [-R|--restart-policy <policy>]
+dgx-vllm-launcher [qwen36-fp8|qwen36-nvfp4|gemma4-nvfp4|ornith-nvfp4] [-r|--reasoning] [-w|--no-warmup] [-s|--no-smoke-check] [-d|--detach]
+                      [-p|--enable-prefix-caching] [-m|--moe-backend <name>] [-l|--linear-backend <name>] [-R|--restart-policy <policy>] [--show-defaults]
+
+# Global default inspection
+ dvl --show-defaults
 ```
 
 - `qwen36-fp8`
@@ -86,7 +90,8 @@ dgx-vllm-launcher <qwen36-fp8|qwen36-nvfp4|gemma4-nvfp4|ornith-nvfp4> [-r|--reas
 - `-s, --no-smoke-check`  Skip post-startup smoke check request
 - `-d, --detach`  Exit after health/warmup/smoke checks, leaving container running in Docker
 - `-p, --enable-prefix-caching`  Alias flag kept for compatibility (prefix caching is enabled by default)
-- `-m, --moe-backend <name>`  Pass-through to vLLM `--moe-backend` (defaults to `flashinfer_b12x` for `qwen36-nvfp4`, `gemma4-nvfp4`, and `ornith-nvfp4`)
+- `-m, --moe-backend <name>`  Pass-through to vLLM `--moe-backend` (defaults to `flashinfer_b12x` for `qwen36-nvfp4`; other variants default to `(none)`)
+- `--show-defaults`  Show the preferred default launch profile for each supported variant and exit
 - `-l, --linear-backend <name>`  Pass-through to vLLM `--linear-backend`
 - `-R, --restart-policy <policy>`  Optional Docker restart policy (`on-failure`, `unless-stopped`, etc.)
 
@@ -136,6 +141,21 @@ docker stop vllm-ornith-nvfp4
 - `VLLM_MARLIN_USE_ATOMIC_ADD` (default `1`)
 - `VLLM_ENABLE_INDUCTOR_MAX_AUTOTUNE` (default `1`)
 
+## Recommended defaults by variant
+
+| Variant | Model | Default MoE backend |
+|---|---|---|
+| `qwen36-fp8` | `Qwen/Qwen3.6-35B-A3B-FP8` | `(none)` |
+| `qwen36-nvfp4` | local `/model` (`~/models/Qwen3.6-35B-A3B-NVFP4`) | `flashinfer_b12x` |
+| `gemma4-nvfp4` | `nvidia/Gemma-4-26B-A4B-NVFP4` | `(none)` |
+| `ornith-nvfp4` | `sakamakismile/Ornith-1.0-35B-NVFP4` | `(none)` |
+
+Inspect these from CLI:
+
+```bash
+uv run dvl --show-defaults
+```
+
 ## Notes
 
 - Served model names are fixed for compatibility:
@@ -144,6 +164,8 @@ docker stop vllm-ornith-nvfp4
   - `gemma4-nvfp4`
   - `ornith-nvfp4`
 - For NVFP4 startup performance tuning, keep warmup enabled unless you intentionally want to skip it.
+- If Gemma 4 fails with `GELU_TANH`/`FLASHINFER_B12X` startup errors, launch without forcing `moe-backend` (or run with an explicit supported backend for your image).
+  - Example: `uv run dvl gemma4-nvfp4` (no `--moe-backend`)
 - **Pi note:** Pi uses `tool_choice=auto` for tool calling; to support this with vLLM, start with `--reasoning`.
 
 ## Developer quickstart

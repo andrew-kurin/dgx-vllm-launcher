@@ -32,10 +32,10 @@ def test_build_start_command_adds_variant_args_and_envs(monkeypatch):
     monkeypatch.setenv("VLLM_ENABLE_INDUCTOR_MAX_AUTOTUNE", "0")
 
     command = build_start_command(
-        variant="nvfp4",
+        variant="qwen36-nvfp4",
         image="vllm-image",
         model="/model",
-        container_name="vllm-nvfp4",
+        container_name="vllm-qwen36-nvfp4",
         common_args=["--host", "0.0.0.0", "--quantization", "modelopt"],
         host_cache_dir="/tmp/cache",
         restart_policy="unless-stopped",
@@ -53,10 +53,10 @@ def test_build_start_command_adds_variant_args_and_envs(monkeypatch):
 
 def test_build_start_command_reuses_host_vllm_cache_dir():
     command = build_start_command(
-        variant="nvfp4",
+        variant="qwen36-nvfp4",
         image="vllm-image",
         model="/model",
-        container_name="vllm-nvfp4",
+        container_name="vllm-qwen36-nvfp4",
         common_args=["--host", "0.0.0.0"],
         host_cache_dir="/tmp/custom-vllm-cache",
         restart_policy=None,
@@ -69,10 +69,10 @@ def test_build_start_command_reuses_host_vllm_cache_dir():
     assert "-e" in command and "TORCHINDUCTOR_CACHE_DIR=/root/.cache/vllm/torchinductor" in command
 
     fp8_command = build_start_command(
-        variant="fp8",
+        variant="qwen36-fp8",
         image="vllm-image",
         model="Qwen/Qwen3.6-35B-A3B-FP8",
-        container_name="vllm-fp8",
+        container_name="vllm-qwen36-fp8",
         common_args=["--host", "0.0.0.0"],
         host_cache_dir="/tmp/custom-vllm-cache",
         restart_policy=None,
@@ -111,11 +111,11 @@ def test_run_warmup_uses_sender_callable(tmp_path):
         calls.append(payload["prompt"])
         return 200, "{\"id\": \"ok\"}", None
 
-    run_warmup("model", 2, "vllm-nvfp4", sender=fake_sender, output_dir=str(tmp_path))
+    run_warmup("model", 2, "vllm-qwen36-nvfp4", sender=fake_sender, output_dir=str(tmp_path))
 
     assert len(calls) == 2
     for i in (1, 2):
-        p = tmp_path / f"vllm_warmup_vllm-nvfp4_{i}.json"
+        p = tmp_path / f"vllm_warmup_vllm-qwen36-nvfp4_{i}.json"
         assert p.exists()
         assert p.read_text() == '{"id": "ok"}'
 
@@ -124,8 +124,8 @@ def test_smoke_check_writes_file_when_ok(tmp_path):
     def fake_sender(payload, max_time=120):
         return 200, "{\"id\": \"ok\"}", None
 
-    smoke_check("model", "vllm-nvfp4", sender=fake_sender, output_dir=str(tmp_path))
-    p = tmp_path / "vllm_smoke_vllm-nvfp4.json"
+    smoke_check("model", "vllm-qwen36-nvfp4", sender=fake_sender, output_dir=str(tmp_path))
+    p = tmp_path / "vllm_smoke_vllm-qwen36-nvfp4.json"
     assert p.exists()
     assert p.read_text() == '{"id": "ok"}'
 
@@ -192,7 +192,7 @@ def test_run_detach_mode_keeps_container_running(monkeypatch, tmp_path):
         return "container-id"
 
     def fake_wait_for_health(name: str, _timeout_seconds: int, **_kwargs: object) -> bool:
-        assert name == "vllm-nvfp4"
+        assert name == "vllm-qwen36-nvfp4"
         return True
 
     def fake_remove_container(_name: str) -> None:
@@ -211,7 +211,7 @@ def test_run_detach_mode_keeps_container_running(monkeypatch, tmp_path):
     monkeypatch.setattr(orchestrator, "remove_container_if_exists", fake_remove_container)
 
     args = cli.LaunchArgs(
-        variant="nvfp4",
+        variant="qwen36-nvfp4",
         reasoning=False,
         no_warmup=False,
         no_smoke_check=False,
@@ -239,7 +239,7 @@ def test_run_stream_mode_stops_container_on_exit(monkeypatch, tmp_path):
         return "container-id"
 
     def fake_wait_for_health(name: str, _timeout_seconds: int, **_kwargs: object) -> bool:
-        assert name == "vllm-fp8"
+        assert name == "vllm-qwen36-fp8"
         return True
 
     def fake_remove_container(_name: str) -> None:
@@ -258,7 +258,7 @@ def test_run_stream_mode_stops_container_on_exit(monkeypatch, tmp_path):
     monkeypatch.setattr(orchestrator, "remove_container_if_exists", fake_remove_container)
 
     args = cli.LaunchArgs(
-        variant="fp8",
+        variant="qwen36-fp8",
         reasoning=False,
         no_warmup=False,
         no_smoke_check=False,
@@ -276,7 +276,7 @@ def test_run_stream_mode_stops_container_on_exit(monkeypatch, tmp_path):
     assert calls["remove"] == 2
 
 
-def test_run_nvfp4_defaults_moe_backend(monkeypatch, tmp_path):
+def test_run_qwen36_nvfp4_defaults_moe_backend(monkeypatch, tmp_path):
     captured_kwargs = {}
 
     def fake_start_server(**kwargs: object) -> str:
@@ -284,7 +284,7 @@ def test_run_nvfp4_defaults_moe_backend(monkeypatch, tmp_path):
         return "container-id"
 
     def fake_wait_for_health(name: str, _timeout_seconds: int, **_kwargs: object) -> bool:
-        assert name == "vllm-nvfp4"
+        assert name == "vllm-qwen36-nvfp4"
         return True
 
     monkeypatch.setenv("VLLM_CACHE_DIR", str(tmp_path / "cache3"))
@@ -296,7 +296,7 @@ def test_run_nvfp4_defaults_moe_backend(monkeypatch, tmp_path):
     monkeypatch.setattr(orchestrator, "remove_container_if_exists", lambda _name: None)
 
     args = cli.LaunchArgs(
-        variant="nvfp4",
+        variant="qwen36-nvfp4",
         reasoning=False,
         no_warmup=False,
         no_smoke_check=False,
@@ -351,7 +351,7 @@ def test_run_gemma4_defaults_moe_backend(monkeypatch, tmp_path):
     assert captured_kwargs["model"] == "nvidia/Gemma-4-26B-A4B-NVFP4"
 
 
-def test_run_fp8_does_not_set_default_moe_backend(monkeypatch, tmp_path):
+def test_run_qwen36_fp8_does_not_set_default_moe_backend(monkeypatch, tmp_path):
     captured_kwargs = {}
 
     def fake_start_server(**kwargs: object) -> str:
@@ -359,7 +359,7 @@ def test_run_fp8_does_not_set_default_moe_backend(monkeypatch, tmp_path):
         return "container-id"
 
     def fake_wait_for_health(name: str, _timeout_seconds: int, **_kwargs: object) -> bool:
-        assert name == "vllm-fp8"
+        assert name == "vllm-qwen36-fp8"
         return True
 
     monkeypatch.setenv("VLLM_CACHE_DIR", str(tmp_path / "cache4"))
@@ -371,7 +371,7 @@ def test_run_fp8_does_not_set_default_moe_backend(monkeypatch, tmp_path):
     monkeypatch.setattr(orchestrator, "remove_container_if_exists", lambda _name: None)
 
     args = cli.LaunchArgs(
-        variant="fp8",
+        variant="qwen36-fp8",
         reasoning=False,
         no_warmup=False,
         no_smoke_check=False,

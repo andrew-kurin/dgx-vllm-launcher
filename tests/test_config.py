@@ -10,17 +10,17 @@ from dgx_vllm_launcher.config import (
 )
 
 
-def test_resolve_variant_config_fp8_defaults():
-    cfg = resolve_variant_config("fp8", env_getter=lambda key, default: default)
+def test_resolve_variant_config_qwen36_fp8_defaults():
+    cfg = resolve_variant_config("qwen36-fp8", env_getter=lambda key, default: default)
     assert cfg.model == "Qwen/Qwen3.6-35B-A3B-FP8"
     assert cfg.image == DEFAULT_FP8_IMAGE
     assert cfg.served_model_name == "qwen36-fp8"
     assert cfg.ready_timeout_seconds == DEFAULT_READY_TIMEOUT
 
 
-def test_resolve_variant_config_nvfp4_defaults_and_unified_env_override():
+def test_resolve_variant_config_qwen36_nvfp4_defaults_and_unified_env_override():
     cfg = resolve_variant_config(
-        "nvfp4",
+        "qwen36-nvfp4",
         env_getter=lambda key, default: {
             "VLLM_READY_TIMEOUT": "42",
         }.get(key, default),
@@ -39,9 +39,9 @@ def test_resolve_variant_config_gemma4_defaults():
     assert cfg.ready_timeout_seconds == DEFAULT_READY_TIMEOUT
 
 
-def test_resolve_variant_config_fp8_respects_unified_timeout():
+def test_resolve_variant_config_qwen36_fp8_respects_unified_timeout():
     cfg = resolve_variant_config(
-        "fp8",
+        "qwen36-fp8",
         env_getter=lambda key, default: {
             "VLLM_READY_TIMEOUT": "64",
         }.get(key, default),
@@ -58,12 +58,10 @@ def test_resolve_cache_dir_uses_env_override():
 def test_resolve_variant_config_invalid_timeout_raises():
     try:
         resolve_variant_config(
-            "fp8",
+            "qwen36-fp8",
             env_getter=lambda key, default: "not-an-int" if key == "VLLM_READY_TIMEOUT" else default,
         )
     except RuntimeError:
         pass
     else:
         raise AssertionError("invalid timeout should raise")
-
-

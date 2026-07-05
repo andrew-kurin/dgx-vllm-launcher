@@ -21,13 +21,13 @@ class LaunchArgs:
 
 def parse_args(argv: list[str] | None = None) -> LaunchArgs:
     parser = argparse.ArgumentParser(
-        description="Unified launcher for qwen fp8 / qwen nvfp4 / gemma4 nvfp4 vLLM serving.",
+        description="Unified launcher for qwen/gemma vLLM variants.",
         formatter_class=argparse.RawTextHelpFormatter,
     )
     parser.add_argument(
         "variant",
-        choices=["fp8", "nvfp4", "gemma4-nvfp4"],
-        help="fp8, nvfp4, or gemma4-nvfp4",
+        choices=["qwen36-fp8", "qwen36-nvfp4", "gemma4-nvfp4"],
+        help="qwen36-fp8, qwen36-nvfp4, or gemma4-nvfp4",
     )
     parser.add_argument("-r", "--reasoning", action="store_true", help="Enable Qwen reasoning parser + tool-choice path")
     parser.add_argument("-w", "--no-warmup", action="store_true", help="Skip pre-startup warmup requests")

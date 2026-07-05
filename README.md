@@ -6,8 +6,8 @@ A lightweight Python launcher for serving Qwen FP8 / Qwen NVFP4 / Gemma-4 NVFP4 
 
 This project provides a single Python entrypoint for running either:
 
-- `fp8` model from Hugging Face
-- `nvfp4` model from local path `~/models/Qwen3.6-35B-A3B-NVFP4`
+- `qwen36-fp8` model from Hugging Face
+- `qwen36-nvfp4` model from local path `~/models/Qwen3.6-35B-A3B-NVFP4`
 - `gemma4-nvfp4` model from Hugging Face `nvidia/Gemma-4-26B-A4B-NVFP4`
 
 It includes:
@@ -37,53 +37,43 @@ Run with Python:
 
 ```bash
 # Full command
-uv run dgx-vllm-launcher fp8
+uv run dgx-vllm-launcher qwen36-fp8
 
-# Explicit, family-prefixed aliases (recommended):
-# Qwen variants
-uv run dvl-qwen-fp8
-uv run dvl-qwen-nvfp4
-# Gemma variants
-uv run dvl-gemma4-nvfp4
-
-# Legacy short aliases (still supported):
-# dvl requires variant
-uv run dvl fp8
-# nvfp4 uses flashinfer_b12x MoE backend by default
-uv run dgxvllm nvfp4
-# gemma4-nvfp4 uses the same launcher profile
-uv run dgxvllm gemma4-nvfp4
+# Short command + variant
+uv run dvl qwen36-fp8
+uv run dvl qwen36-nvfp4
+uv run dvl gemma4-nvfp4
 
 # FP8 needs HuggingFace auth; either env token:
-HF_TOKEN=... uv run dvl-qwen-fp8 --reasoning
+HF_TOKEN=... uv run dvl qwen36-fp8 --reasoning
 # or login once with HF CLI (token is auto-detected):
 # huggingface-cli login
-uv run dvl-qwen-fp8 --reasoning
+uv run dvl qwen36-fp8 --reasoning
 ```
 Or run as a module:
 
 ```bash
-uv run python -m dgx_vllm_launcher fp8
+uv run python -m dgx_vllm_launcher qwen36-fp8
 ```
 
 ## Command-line usage
 
 All commands below accept any of:
 `dgx-vllm-launcher`, `dgxvllm`, or `dvl`
-or explicit aliases:
-`dvl-qwen-fp8`, `dvl-qwen-nvfp4`, `dvl-gemma4-nvfp4`
+where the variant is one of:
+`qwen36-fp8`, `qwen36-nvfp4`, or `gemma4-nvfp4`.
 
 ```bash
-dgx-vllm-launcher <fp8|nvfp4|gemma4-nvfp4> [-r|--reasoning] [-w|--no-warmup] [-s|--no-smoke-check] [-d|--detach]
+dgx-vllm-launcher <qwen36-fp8|qwen36-nvfp4|gemma4-nvfp4> [-r|--reasoning] [-w|--no-warmup] [-s|--no-smoke-check] [-d|--detach]
                       [-p|--enable-prefix-caching] [-m|--moe-backend <name>] [-l|--linear-backend <name>] [-R|--restart-policy <policy>]
 ```
 
-- `fp8`
+- `qwen36-fp8`
   - serves Hugging Face model `Qwen/Qwen3.6-35B-A3B-FP8`
-- `nvfp4`
+- `qwen36-nvfp4`
   - serves local model mounted as `/model` from `~/models/Qwen3.6-35B-A3B-NVFP4`
 - `gemma4-nvfp4`
-  - serves HuggingFace model `nvidia/Gemma-4-26B-A4B-NVFP4`
+  - serves Hugging Face model `nvidia/Gemma-4-26B-A4B-NVFP4`
 
 ### Arguments
 
@@ -92,7 +82,7 @@ dgx-vllm-launcher <fp8|nvfp4|gemma4-nvfp4> [-r|--reasoning] [-w|--no-warmup] [-s
 - `-s, --no-smoke-check`  Skip post-startup smoke check request
 - `-d, --detach`  Exit after health/warmup/smoke checks, leaving container running in Docker
 - `-p, --enable-prefix-caching`  Alias flag kept for compatibility (prefix caching is enabled by default)
-- `-m, --moe-backend <name>`  Pass-through to vLLM `--moe-backend` (defaults to `flashinfer_b12x` for `nvfp4` and `gemma4-nvfp4`)
+- `-m, --moe-backend <name>`  Pass-through to vLLM `--moe-backend` (defaults to `flashinfer_b12x` for `qwen36-nvfp4` and `gemma4-nvfp4`)
 - `-l, --linear-backend <name>`  Pass-through to vLLM `--linear-backend`
 - `-R, --restart-policy <policy>`  Optional Docker restart policy (`on-failure`, `unless-stopped`, etc.)
 
@@ -105,27 +95,27 @@ dgx-vllm-launcher <fp8|nvfp4|gemma4-nvfp4> [-r|--reasoning] [-w|--no-warmup] [-s
 Example:
 
 ```bash
-dgx-vllm-launcher nvfp4 --reasoning --detach --restart-policy unless-stopped
+dgx-vllm-launcher qwen36-nvfp4 --reasoning --detach --restart-policy unless-stopped
 ```
 
 Service management:
 
 ```bash
-docker ps -f name=vllm-nvfp4
+docker ps -f name=vllm-qwen36-nvfp4
 docker ps -f name=vllm-gemma4-nvfp4
 
-docker logs -f vllm-nvfp4
+docker logs -f vllm-qwen36-nvfp4
 # or
 docker logs -f vllm-gemma4-nvfp4
 
-docker stop vllm-nvfp4
+docker stop vllm-qwen36-nvfp4
 # or
 docker stop vllm-gemma4-nvfp4
 ```
 
 ## Environment variables
 
-- `HF_TOKEN` (required for `fp8`)
+- `HF_TOKEN` (required for `qwen36-fp8`)
 - `VLLM_WARMUP_REQUESTS` (default `2`)
 - `VLLM_READY_TIMEOUT` (default `1800`) applies to all variants
 - `VLLM_CACHE_DIR` (default `~/.cache/vllm`)

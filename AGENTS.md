@@ -17,14 +17,11 @@ uv run check
 uv sync --group dev
 
 # Run the launcher
-uv run dgx-vllm-launcher fp8
-# or explicit family-prefixed aliases
-uv run dvl-qwen-fp8
-uv run dvl-qwen-nvfp4
-uv run dvl-gemma4-nvfp4
-# or legacy shorthand (still supported)
-uv run dvl fp8
-uv run dgxvllm nvfp4
+uv run dgx-vllm-launcher qwen36-fp8
+# short command + explicit variant
+uv run dvl qwen36-fp8
+uv run dvl qwen36-nvfp4
+uv run dvl gemma4-nvfp4
 ```
 
 ## Backward-compatibility changes policy

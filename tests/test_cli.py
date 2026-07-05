@@ -3,10 +3,10 @@ from __future__ import annotations
 from dgx_vllm_launcher import cli
 
 
-def test_parse_args_fp8_defaults():
-    args = cli.parse_args(["fp8"])
+def test_parse_args_qwen36_fp8_defaults():
+    args = cli.parse_args(["qwen36-fp8"])
 
-    assert args.variant == "fp8"
+    assert args.variant == "qwen36-fp8"
     assert args.reasoning is False
     assert args.no_warmup is False
     assert args.no_smoke_check is False
@@ -20,7 +20,7 @@ def test_parse_args_fp8_defaults():
 def test_parse_args_flags():
     args = cli.parse_args(
         [
-            "nvfp4",
+            "qwen36-nvfp4",
             "--reasoning",
             "--no-warmup",
             "--no-smoke-check",
@@ -35,7 +35,7 @@ def test_parse_args_flags():
         ]
     )
 
-    assert args.variant == "nvfp4"
+    assert args.variant == "qwen36-nvfp4"
     assert args.reasoning is True
     assert args.no_warmup is True
     assert args.no_smoke_check is True
@@ -55,7 +55,7 @@ def test_parse_args_gemma4_variant():
 def test_parse_args_short_flags():
     args = cli.parse_args(
         [
-            "nvfp4",
+            "qwen36-nvfp4",
             "-r",
             "-w",
             "-s",
@@ -70,7 +70,7 @@ def test_parse_args_short_flags():
         ]
     )
 
-    assert args.variant == "nvfp4"
+    assert args.variant == "qwen36-nvfp4"
     assert args.reasoning is True
     assert args.no_warmup is True
     assert args.no_smoke_check is True

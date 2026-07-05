@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Literal, Callable
 import os
 
-Variant = Literal["fp8", "nvfp4", "gemma4-nvfp4"]
+Variant = Literal["qwen36-fp8", "qwen36-nvfp4", "gemma4-nvfp4"]
 
 MODEL_BASE = "Qwen/Qwen3.6-35B-A3B"
 GEMMA4_MODEL = "nvidia/Gemma-4-26B-A4B-NVFP4"
@@ -41,11 +41,11 @@ class LaunchConfig:
 def resolve_variant_config(variant: Variant, env_getter: Callable[[str, str], str] = os.getenv) -> VariantConfig:
     timeout = env_getter("VLLM_READY_TIMEOUT", str(DEFAULT_READY_TIMEOUT))
 
-    if variant == "fp8":
+    if variant == "qwen36-fp8":
         model = f"{MODEL_BASE}-FP8"
         image = env_getter("VLLM_IMAGE_FP8", DEFAULT_FP8_IMAGE)
         served = "qwen36-fp8"
-    elif variant == "nvfp4":
+    elif variant == "qwen36-nvfp4":
         model = "/model"
         image = env_getter(
             "VLLM_IMAGE_NVFP4",

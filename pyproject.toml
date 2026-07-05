@@ -22,9 +22,6 @@ dev = [
 dgx-vllm-launcher = "dgx_vllm_launcher.orchestrator:main"
 dgxvllm = "dgx_vllm_launcher.orchestrator:main"
 dvl = "dgx_vllm_launcher.orchestrator:main"
-dvl-qwen-fp8 = "dgx_vllm_launcher.variant_aliases:qwen_fp8"
-dvl-qwen-nvfp4 = "dgx_vllm_launcher.variant_aliases:qwen_nvfp4"
-dvl-gemma4-nvfp4 = "dgx_vllm_launcher.variant_aliases:gemma4_nvfp4"
 check = "dgx_vllm_launcher.check:main"
 
 [dependency-groups]

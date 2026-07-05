@@ -193,7 +193,7 @@ def build_start_command(
     if restart_policy:
         cmd.extend(["--restart", restart_policy])
 
-    if variant == "fp8":
+    if variant == "qwen36-fp8":
         if not hf_token:
             raise RuntimeError("HF token required for fp8; set HF_TOKEN or run `huggingface-cli login` and retry")
         hf_cache = os.path.expanduser("~/.cache/huggingface")
@@ -205,7 +205,7 @@ def build_start_command(
                 f"{hf_cache}:/root/.cache/huggingface",
             ]
         )
-    elif variant == "nvfp4":
+    elif variant == "qwen36-nvfp4":
         model_path = os.path.expanduser("~/models/Qwen3.6-35B-A3B-NVFP4")
         cmd.extend(["-v", f"{model_path}:/model"])
 
@@ -233,7 +233,7 @@ def start_server(
     restart_policy: str | None,
     host_cache_dir: str,
 ) -> str:
-    hf_token = _resolve_hf_token() if variant == "fp8" else None
+    hf_token = _resolve_hf_token() if variant == "qwen36-fp8" else None
 
     cmd = build_start_command(
         variant=variant,
@@ -459,7 +459,7 @@ def _build_launch_config(args: LaunchArgs):
     warmup_requests = 0 if args.no_warmup else resolve_env_int("VLLM_WARMUP_REQUESTS", 2)
     host_cache_dir = resolve_cache_dir()
     common_args = build_common_args(variant_config.served_model_name, args.reasoning)
-    if args.variant in {"nvfp4", "gemma4-nvfp4"}:
+    if args.variant in {"qwen36-nvfp4", "gemma4-nvfp4"}:
         common_args.extend(["--quantization", "modelopt"])
 
     return variant_config, warmup_requests, host_cache_dir, common_args
@@ -488,9 +488,9 @@ def run(args: LaunchArgs) -> int:
     started = False
     cleanup_container = True
     try:
-        if args.variant == "fp8":
+        if args.variant == "qwen36-fp8":
             message = f"→ Serving {MODEL_BASE}-FP8 from HuggingFace..."
-        elif args.variant == "nvfp4":
+        elif args.variant == "qwen36-nvfp4":
             message = "→ Serving local Qwen3.6 NVFP4 model..."
         else:
             message = "→ Serving Gemma 4 26B A4B-NVFP4 from Hugging Face..."
@@ -498,7 +498,7 @@ def run(args: LaunchArgs) -> int:
         console.print(f"[green]{message}[/green]")
 
         resolved_moe_backend = args.moe_backend
-        if args.variant in {"nvfp4", "gemma4-nvfp4"} and resolved_moe_backend is None:
+        if args.variant in {"qwen36-nvfp4", "gemma4-nvfp4"} and resolved_moe_backend is None:
             resolved_moe_backend = "flashinfer_b12x"
 
         container_id = start_server(

@@ -5,6 +5,8 @@ from dgx_vllm_launcher.config import (
     DEFAULT_FP8_IMAGE,
     DEFAULT_NVFP4_IMAGE,
     DEFAULT_GEMMA4_NVFP4_IMAGE,
+    VARIANTS,
+    VARIANT_PROFILES,
     resolve_variant_config,
     resolve_cache_dir,
 )
@@ -48,6 +50,18 @@ def test_resolve_variant_config_qwen36_fp8_respects_unified_timeout():
     )
 
     assert cfg.ready_timeout_seconds == 64
+
+
+def test_variant_profiles_are_complete():
+    assert set(VARIANTS) == set(VARIANT_PROFILES)
+
+
+def test_variant_profiles_capture_expected_launch_hints():
+    assert VARIANT_PROFILES["qwen36-fp8"].requires_hf_token is True
+    assert VARIANT_PROFILES["qwen36-fp8"].quantization is None
+    assert VARIANT_PROFILES["qwen36-nvfp4"].quantization == "modelopt"
+    assert VARIANT_PROFILES["qwen36-nvfp4"].mount_local_model is True
+    assert VARIANT_PROFILES["gemma4-nvfp4"].requires_hf_token is False
 
 
 def test_resolve_cache_dir_uses_env_override():

@@ -15,10 +15,11 @@ from rich.table import Table
 
 from .cli import LaunchArgs, parse_args
 from .config import (
-    MODEL_BASE,
+    Variant,
     resolve_cache_dir,
     resolve_env_int,
     resolve_variant_config,
+    resolve_variant_profile,
 )
 from .docker_ops import (
     inspect_container,
@@ -155,7 +156,7 @@ def _resolve_hf_token() -> str | None:
 
 def build_start_command(
     *,
-    variant: str,
+    variant: Variant,
     image: str,
     model: str,
     container_name: str,
@@ -168,6 +169,7 @@ def build_start_command(
 ) -> list[str]:
     vllm_marin = os.environ.get("VLLM_MARLIN_USE_ATOMIC_ADD", "1")
     vllm_inductor = os.environ.get("VLLM_ENABLE_INDUCTOR_MAX_AUTOTUNE", "1")
+    profile = resolve_variant_profile(variant)
 
     cmd = [
         "docker",
@@ -193,7 +195,7 @@ def build_start_command(
     if restart_policy:
         cmd.extend(["--restart", restart_policy])
 
-    if variant == "qwen36-fp8":
+    if profile.requires_hf_token:
         if not hf_token:
             raise RuntimeError("HF token required for fp8; set HF_TOKEN or run `huggingface-cli login` and retry")
         hf_cache = os.path.expanduser("~/.cache/huggingface")
@@ -205,8 +207,8 @@ def build_start_command(
                 f"{hf_cache}:/root/.cache/huggingface",
             ]
         )
-    elif variant == "qwen36-nvfp4":
-        model_path = os.path.expanduser("~/models/Qwen3.6-35B-A3B-NVFP4")
+    elif profile.mount_local_model and profile.local_model_path:
+        model_path = os.path.expanduser(profile.local_model_path)
         cmd.extend(["-v", f"{model_path}:/model"])
 
     if moe_backend:
@@ -223,7 +225,7 @@ def build_start_command(
 
 def start_server(
     *,
-    variant: str,
+    variant: Variant,
     image: str,
     model: str,
     container_name: str,
@@ -233,7 +235,8 @@ def start_server(
     restart_policy: str | None,
     host_cache_dir: str,
 ) -> str:
-    hf_token = _resolve_hf_token() if variant == "qwen36-fp8" else None
+    profile = resolve_variant_profile(variant)
+    hf_token = _resolve_hf_token() if profile.requires_hf_token else None
 
     cmd = build_start_command(
         variant=variant,
@@ -456,20 +459,21 @@ def _signal_to_keyboard_interrupt(_signum: int, _frame) -> None:
 
 def _build_launch_config(args: LaunchArgs):
     variant_config = resolve_variant_config(args.variant)
+    profile = resolve_variant_profile(args.variant)
     warmup_requests = 0 if args.no_warmup else resolve_env_int("VLLM_WARMUP_REQUESTS", 2)
     host_cache_dir = resolve_cache_dir()
     common_args = build_common_args(variant_config.served_model_name, args.reasoning)
-    if args.variant in {"qwen36-nvfp4", "gemma4-nvfp4"}:
-        common_args.extend(["--quantization", "modelopt"])
+    if profile.quantization:
+        common_args.extend(["--quantization", profile.quantization])
 
-    return variant_config, warmup_requests, host_cache_dir, common_args
+    return variant_config, profile, warmup_requests, host_cache_dir, common_args
 
 
 def run(args: LaunchArgs) -> int:
     signal.signal(signal.SIGINT, _signal_to_keyboard_interrupt)
     signal.signal(signal.SIGTERM, _signal_to_keyboard_interrupt)
 
-    variant_config, warmup_requests, host_cache_dir, common_args = _build_launch_config(args)
+    variant_config, profile, warmup_requests, host_cache_dir, common_args = _build_launch_config(args)
     container_name = f"vllm-{args.variant}"
     timeout_seconds = variant_config.ready_timeout_seconds
     Path(host_cache_dir).mkdir(parents=True, exist_ok=True)
@@ -488,18 +492,11 @@ def run(args: LaunchArgs) -> int:
     started = False
     cleanup_container = True
     try:
-        if args.variant == "qwen36-fp8":
-            message = f"→ Serving {MODEL_BASE}-FP8 from HuggingFace..."
-        elif args.variant == "qwen36-nvfp4":
-            message = "→ Serving local Qwen3.6 NVFP4 model..."
-        else:
-            message = "→ Serving Gemma 4 26B A4B-NVFP4 from Hugging Face..."
-
-        console.print(f"[green]{message}[/green]")
+        console.print(f"[green]{profile.startup_message}[/green]")
 
         resolved_moe_backend = args.moe_backend
-        if args.variant in {"qwen36-nvfp4", "gemma4-nvfp4"} and resolved_moe_backend is None:
-            resolved_moe_backend = "flashinfer_b12x"
+        if resolved_moe_backend is None:
+            resolved_moe_backend = profile.default_moe_backend
 
         container_id = start_server(
             variant=args.variant,

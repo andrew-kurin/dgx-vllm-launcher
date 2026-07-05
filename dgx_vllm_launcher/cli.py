@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 
-from .config import Variant
+from .config import VARIANTS, Variant
 
 
 @dataclass(frozen=True)
@@ -26,8 +26,8 @@ def parse_args(argv: list[str] | None = None) -> LaunchArgs:
     )
     parser.add_argument(
         "variant",
-        choices=["qwen36-fp8", "qwen36-nvfp4", "gemma4-nvfp4"],
-        help="qwen36-fp8, qwen36-nvfp4, or gemma4-nvfp4",
+        choices=list(VARIANTS),
+        help=", ".join(VARIANTS),
     )
     parser.add_argument("-r", "--reasoning", action="store_true", help="Enable Qwen reasoning parser + tool-choice path")
     parser.add_argument("-w", "--no-warmup", action="store_true", help="Skip pre-startup warmup requests")
@@ -70,5 +70,3 @@ def parse_args(argv: list[str] | None = None) -> LaunchArgs:
         linear_backend=ns.linear_backend,
         restart_policy=ns.restart_policy,
     )
-
-

@@ -93,8 +93,12 @@ def inspect_container(name: str) -> subprocess.CompletedProcess:
     return run_docker_noexcept(["docker", "inspect", name], capture_output=True)
 
 
-def stream_container_logs(name: str, *, capture_output: bool = False) -> subprocess.Popen[str]:
-    cmd = docker_cmd(["docker", "logs", "-f", name])
+def stream_container_logs(name: str, *, capture_output: bool = False, tail: int | None = None) -> subprocess.Popen[str]:
+    args = ["docker", "logs", "-f"]
+    if tail is not None:
+        args.extend(["--tail", str(tail)])
+    args.append(name)
+    cmd = docker_cmd(args)
     if capture_output:
         return subprocess.Popen(
             cmd,

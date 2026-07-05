@@ -49,6 +49,40 @@ def test_build_start_command_adds_variant_args_and_envs(monkeypatch):
     assert "-v" in command and "/tmp/cache:/root/.cache/vllm" in command
 
 
+def test_build_start_command_reuses_host_vllm_cache_dir():
+    command = build_start_command(
+        variant="nvfp4",
+        image="vllm-image",
+        model="/model",
+        container_name="vllm-nvfp4",
+        common_args=["--host", "0.0.0.0"],
+        host_cache_dir="/tmp/custom-vllm-cache",
+        restart_policy=None,
+        moe_backend=None,
+        linear_backend=None,
+        hf_token=None,
+    )
+
+    assert "/tmp/custom-vllm-cache:/root/.cache/vllm" in command
+    assert "-e" in command and "TORCHINDUCTOR_CACHE_DIR=/root/.cache/vllm/torchinductor" in command
+
+    fp8_command = build_start_command(
+        variant="fp8",
+        image="vllm-image",
+        model="Qwen/Qwen3.6-35B-A3B-FP8",
+        container_name="vllm-fp8",
+        common_args=["--host", "0.0.0.0"],
+        host_cache_dir="/tmp/custom-vllm-cache",
+        restart_policy=None,
+        moe_backend=None,
+        linear_backend=None,
+        hf_token="x",
+    )
+
+    assert "/tmp/custom-vllm-cache:/root/.cache/vllm" in fp8_command
+    assert "/root/.cache/huggingface" in " ".join(fp8_command)
+
+
 def test_run_warmup_uses_sender_callable(tmp_path):
     calls = []
 

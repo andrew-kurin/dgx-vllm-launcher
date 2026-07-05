@@ -11,7 +11,6 @@ from typing import Callable, Protocol
 from rich import box
 from rich.console import Console
 from rich.panel import Panel
-from rich.pretty import Pretty
 from rich.table import Table
 
 from .cli import LaunchArgs, parse_args
@@ -329,6 +328,66 @@ def smoke_check(
         console.print(f"[dim]{err}[/]")
 
 
+def _format_common_args(args: list[str]) -> Table:
+    table = Table(
+        title="Common args",
+        box=box.ROUNDED,
+        show_header=False,
+        show_edge=False,
+        show_lines=False,
+        padding=(0, 1),
+    )
+    table.add_column("Arg", style="cyan")
+    table.add_column("Value", style="magenta")
+
+    no_value_flags = {
+        "--enable-prefix-caching",
+        "--enable-flashinfer-autotune",
+        "--trust-remote-code",
+        "--enable-auto-tool-choice",
+    }
+    value_flags = {
+        "--host",
+        "--port",
+        "--tensor-parallel-size",
+        "--gpu-memory-utilization",
+        "--max-model-len",
+        "--max-num-seqs",
+        "--max-num-batched-tokens",
+        "--safetensors-load-strategy",
+        "--generation-config",
+        "--served-model-name",
+        "--reasoning-parser",
+        "--tool-call-parser",
+        "--moe-backend",
+        "--linear-backend",
+        "--quantization",
+    }
+
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg in no_value_flags:
+            table.add_row(arg, "")
+            i += 1
+            continue
+
+        if arg in value_flags and i + 1 < len(args):
+            table.add_row(arg, args[i + 1])
+            i += 2
+            continue
+
+        if i == len(args) - 1 or args[i + 1].startswith("--"):
+            table.add_row(arg, "")
+            i += 1
+            continue
+
+        table.add_row(arg, args[i + 1])
+        i += 2
+
+    return table
+
+
 def print_summary(
     *,
     variant: str,
@@ -349,12 +408,11 @@ def print_summary(
     table.add_row("Restart policy", restart_policy or "(none)")
     console.print(Panel(table, title="vLLM serve", expand=False))
     if common_args:
-        console.print("[dim]Common args:[/]")
-        console.print(Pretty(common_args))
+        console.print(_format_common_args(common_args))
 
 
-def stream_logs_forever(name: str) -> int:
-    proc = stream_container_logs(name)
+def stream_logs_forever(name: str, *, tail: int | None = 20) -> int:
+    proc = stream_container_logs(name, tail=tail)
     try:
         return proc.wait()
     except KeyboardInterrupt:
@@ -435,7 +493,8 @@ def run(args: LaunchArgs) -> int:
 
         console.print("[green]Service is healthy. Running warmup + smoke readiness checks.[/green]")
         run_warmup(variant_config.served_model_name, warmup_requests, container_name)
-        smoke_check(variant_config.served_model_name, container_name)
+        if not args.no_smoke_check:
+            smoke_check(variant_config.served_model_name, container_name)
 
         console.print("\n[blue]Streaming logs. Press Ctrl-C to stop; container will be stopped.[/blue]")
         return stream_logs_forever(container_name)

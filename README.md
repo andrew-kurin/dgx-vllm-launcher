@@ -48,7 +48,7 @@ uv run python -m qwen_vllm_launcher fp8
 ## Command-line usage
 
 ```bash
-qwen-vllm-launcher <fp8|nvfp4> [--reasoning] [--no-warmup] [--enable-prefix-caching]
+qwen-vllm-launcher <fp8|nvfp4> [--reasoning] [--no-warmup] [--no-smoke-check] [--enable-prefix-caching]
                       [--moe-backend <name>] [--linear-backend <name>] [--restart-policy <policy>]
 ```
 
@@ -61,6 +61,7 @@ qwen-vllm-launcher <fp8|nvfp4> [--reasoning] [--no-warmup] [--enable-prefix-cach
 
 - `--reasoning`  Enable Qwen reasoning parser + auto tool choice
 - `--no-warmup`  Skip startup warmup requests
+- `--no-smoke-check`  Skip post-startup smoke check request
 - `--enable-prefix-caching`  Alias flag kept for compatibility (prefix caching is enabled by default)
 - `--moe-backend <name>`  Pass-through to vLLM `--moe-backend`
 - `--linear-backend <name>`  Pass-through to vLLM `--linear-backend`

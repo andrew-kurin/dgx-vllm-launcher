@@ -11,6 +11,7 @@ class LaunchArgs:
     variant: Variant
     reasoning: bool = False
     no_warmup: bool = False
+    no_smoke_check: bool = False
     enable_prefix_caching: bool = False
     moe_backend: str | None = None
     linear_backend: str | None = None
@@ -30,6 +31,11 @@ def parse_args(argv: list[str] | None = None) -> LaunchArgs:
     parser.add_argument("--reasoning", action="store_true", help="Enable Qwen reasoning parser + tool-choice path")
     parser.add_argument("--no-warmup", action="store_true", help="Skip pre-startup warmup requests")
     parser.add_argument(
+        "--no-smoke-check",
+        action="store_true",
+        help="Skip post-startup smoke check",
+    )
+    parser.add_argument(
         "--enable-prefix-caching",
         action="store_true",
         help="Alias/no-op; prefix caching is enabled by default.",
@@ -47,6 +53,7 @@ def parse_args(argv: list[str] | None = None) -> LaunchArgs:
         variant=ns.variant,
         reasoning=ns.reasoning,
         no_warmup=ns.no_warmup,
+        no_smoke_check=ns.no_smoke_check,
         enable_prefix_caching=ns.enable_prefix_caching,
         moe_backend=ns.moe_backend,
         linear_backend=ns.linear_backend,

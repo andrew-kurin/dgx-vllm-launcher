@@ -130,6 +130,29 @@ def build_common_args(served_model_name: str, reasoning: bool) -> list[str]:
     return args
 
 
+def _resolve_hf_token() -> str | None:
+    env_token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
+    if env_token:
+        return env_token.strip() or None
+
+    hf_home = os.environ.get("HF_HOME")
+    candidate_roots = [
+        Path(hf_home) if hf_home else None,
+        Path("~/.cache/huggingface").expanduser(),
+        Path("~/.huggingface").expanduser(),
+    ]
+    for root in candidate_roots:
+        if not root:
+            continue
+        token_path = root / "token"
+        if token_path.exists():
+            token = token_path.read_text(encoding="utf-8").strip()
+            if token:
+                return token
+
+    return None
+
+
 def build_start_command(
     *,
     variant: str,
@@ -172,7 +195,7 @@ def build_start_command(
 
     if variant == "fp8":
         if not hf_token:
-            raise RuntimeError("set HF_TOKEN env var before starting fp8")
+            raise RuntimeError("HF token required for fp8; set HF_TOKEN or run `huggingface-cli login` and retry")
         hf_cache = os.path.expanduser("~/.cache/huggingface")
         cmd.extend(
             [
@@ -210,7 +233,7 @@ def start_server(
     restart_policy: str | None,
     host_cache_dir: str,
 ) -> str:
-    hf_token = os.environ.get("HF_TOKEN", "") if variant == "fp8" else None
+    hf_token = _resolve_hf_token() if variant == "fp8" else None
 
     cmd = build_start_command(
         variant=variant,

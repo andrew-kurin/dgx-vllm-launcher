@@ -329,3 +329,26 @@ def test_run_fp8_does_not_set_default_moe_backend(monkeypatch, tmp_path):
 
     assert code == 0
     assert captured_kwargs["moe_backend"] is None
+
+
+def test_resolve_hf_token_prefers_env_over_file(monkeypatch, tmp_path):
+    token_path = tmp_path / "token"
+    token_path.write_text("file-token")
+    monkeypatch.setenv("HF_HOME", str(tmp_path))
+    monkeypatch.setenv("HF_TOKEN", "env-token")
+
+    token = orchestrator._resolve_hf_token()
+
+    assert token == "env-token"
+
+
+def test_resolve_hf_token_from_hf_home(monkeypatch, tmp_path):
+    token_path = tmp_path / "token"
+    token_path.write_text("home-token")
+    monkeypatch.setenv("HF_HOME", str(tmp_path))
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.delenv("HUGGING_FACE_HUB_TOKEN", raising=False)
+
+    token = orchestrator._resolve_hf_token()
+
+    assert token == "home-token"

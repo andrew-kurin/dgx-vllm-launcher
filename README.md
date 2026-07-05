@@ -37,10 +37,16 @@ Run with Python:
 ```bash
 # Full command
 uv run dgx-vllm-launcher fp8
-# Short aliases
+# short aliases
 uv run dvl fp8
 # nvfp4 uses flashinfer_b12x MoE backend by default
 uv run dgxvllm nvfp4
+
+# FP8 needs HuggingFace auth; either env token:
+HF_TOKEN=... uv run dvl fp8 --reasoning
+# or login once with HF CLI (token is auto-detected):
+# huggingface-cli login
+uv run dvl fp8 --reasoning
 ```
 Or run as a module:
 

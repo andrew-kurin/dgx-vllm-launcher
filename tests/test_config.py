@@ -43,10 +43,10 @@ def test_resolve_variant_config_gemma4_defaults():
 
 
 def test_resolve_variant_config_ornith_defaults():
-    cfg = resolve_variant_config("ornith1.0-nvfp4", env_getter=lambda key, default: default)
+    cfg = resolve_variant_config("ornith-nvfp4", env_getter=lambda key, default: default)
     assert cfg.model == "sakamakismile/Ornith-1.0-35B-NVFP4"
     assert cfg.image == DEFAULT_ORNITH_NVFP4_IMAGE
-    assert cfg.served_model_name == "ornith1.0-nvfp4"
+    assert cfg.served_model_name == "ornith-nvfp4"
     assert cfg.ready_timeout_seconds == DEFAULT_READY_TIMEOUT
 
 
@@ -71,8 +71,8 @@ def test_variant_profiles_capture_expected_launch_hints():
     assert VARIANT_PROFILES["qwen36-nvfp4"].quantization == "modelopt"
     assert VARIANT_PROFILES["qwen36-nvfp4"].mount_local_model is True
     assert VARIANT_PROFILES["gemma4-nvfp4"].requires_hf_token is False
-    assert VARIANT_PROFILES["ornith1.0-nvfp4"].requires_hf_token is False
-    assert VARIANT_PROFILES["ornith1.0-nvfp4"].quantization == "modelopt"
+    assert VARIANT_PROFILES["ornith-nvfp4"].requires_hf_token is False
+    assert VARIANT_PROFILES["ornith-nvfp4"].quantization == "modelopt"
 
 
 def test_resolve_cache_dir_uses_env_override():

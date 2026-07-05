@@ -106,10 +106,10 @@ def test_build_start_command_gemma4_does_not_mount_local_qwen_model(monkeypatch)
 
 def test_build_start_command_ornith4_does_not_mount_local_model(monkeypatch):
     command = build_start_command(
-        variant="ornith1.0-nvfp4",
+        variant="ornith-nvfp4",
         image="vllm-image",
         model="sakamakismile/Ornith-1.0-35B-NVFP4",
-        container_name="vllm-ornith1.0-nvfp4",
+        container_name="vllm-ornith-nvfp4",
         common_args=["--host", "0.0.0.0", "--quantization", "modelopt"],
         host_cache_dir="/tmp/cache",
         restart_policy=None,
@@ -417,7 +417,7 @@ def test_run_ornith_defaults_moe_backend(monkeypatch, tmp_path):
         return "container-id"
 
     def fake_wait_for_health(name: str, _timeout_seconds: int, **_kwargs: object) -> bool:
-        assert name == "vllm-ornith1.0-nvfp4"
+        assert name == "vllm-ornith-nvfp4"
         return True
 
     monkeypatch.setenv("VLLM_CACHE_DIR", str(tmp_path / "cache-ornith"))
@@ -429,7 +429,7 @@ def test_run_ornith_defaults_moe_backend(monkeypatch, tmp_path):
     monkeypatch.setattr(orchestrator, "remove_container_if_exists", lambda _name: None)
 
     args = cli.LaunchArgs(
-        variant="ornith1.0-nvfp4",
+        variant="ornith-nvfp4",
         reasoning=False,
         no_warmup=False,
         no_smoke_check=False,

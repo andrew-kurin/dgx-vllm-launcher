@@ -53,8 +53,8 @@ def test_parse_args_gemma4_variant():
 
 
 def test_parse_args_ornith_variant():
-    args = cli.parse_args(["ornith1.0-nvfp4", "--moe-backend", "flashinfer"])
-    assert args.variant == "ornith1.0-nvfp4"
+    args = cli.parse_args(["ornith-nvfp4", "--moe-backend", "flashinfer"])
+    assert args.variant == "ornith-nvfp4"
     assert args.moe_backend == "flashinfer"
 
 

@@ -9,7 +9,7 @@ This project provides a single Python entrypoint for running either:
 - `qwen36-fp8` model from Hugging Face
 - `qwen36-nvfp4` model from local path `~/models/Qwen3.6-35B-A3B-NVFP4`
 - `gemma4-nvfp4` model from Hugging Face `nvidia/Gemma-4-26B-A4B-NVFP4`
-- `ornith1.0-nvfp4` model from Hugging Face `sakamakismile/Ornith-1.0-35B-NVFP4`
+- `ornith-nvfp4` model from Hugging Face `sakamakismile/Ornith-1.0-35B-NVFP4`
 
 It includes:
 
@@ -44,7 +44,7 @@ uv run dgx-vllm-launcher qwen36-fp8
 uv run dvl qwen36-fp8
 uv run dvl qwen36-nvfp4
 uv run dvl gemma4-nvfp4
-uv run dvl ornith1.0-nvfp4
+uv run dvl ornith-nvfp4
 
 # FP8 needs HuggingFace auth; either env token:
 HF_TOKEN=... uv run dvl qwen36-fp8 --reasoning
@@ -63,10 +63,10 @@ uv run python -m dgx_vllm_launcher qwen36-fp8
 All commands below accept any of:
 `dgx-vllm-launcher`, `dgxvllm`, or `dvl`
 where the variant is one of:
-`qwen36-fp8`, `qwen36-nvfp4`, `gemma4-nvfp4`, or `ornith1.0-nvfp4`.
+`qwen36-fp8`, `qwen36-nvfp4`, `gemma4-nvfp4`, or `ornith-nvfp4`.
 
 ```bash
-dgx-vllm-launcher <qwen36-fp8|qwen36-nvfp4|gemma4-nvfp4|ornith1.0-nvfp4> [-r|--reasoning] [-w|--no-warmup] [-s|--no-smoke-check] [-d|--detach]
+dgx-vllm-launcher <qwen36-fp8|qwen36-nvfp4|gemma4-nvfp4|ornith-nvfp4> [-r|--reasoning] [-w|--no-warmup] [-s|--no-smoke-check] [-d|--detach]
                       [-p|--enable-prefix-caching] [-m|--moe-backend <name>] [-l|--linear-backend <name>] [-R|--restart-policy <policy>]
 ```
 
@@ -76,7 +76,7 @@ dgx-vllm-launcher <qwen36-fp8|qwen36-nvfp4|gemma4-nvfp4|ornith1.0-nvfp4> [-r|--r
   - serves local model mounted as `/model` from `~/models/Qwen3.6-35B-A3B-NVFP4`
 - `gemma4-nvfp4`
   - serves Hugging Face model `nvidia/Gemma-4-26B-A4B-NVFP4`
-- `ornith1.0-nvfp4`
+- `ornith-nvfp4`
   - serves Hugging Face model `sakamakismile/Ornith-1.0-35B-NVFP4`
 
 ### Arguments
@@ -86,7 +86,7 @@ dgx-vllm-launcher <qwen36-fp8|qwen36-nvfp4|gemma4-nvfp4|ornith1.0-nvfp4> [-r|--r
 - `-s, --no-smoke-check`  Skip post-startup smoke check request
 - `-d, --detach`  Exit after health/warmup/smoke checks, leaving container running in Docker
 - `-p, --enable-prefix-caching`  Alias flag kept for compatibility (prefix caching is enabled by default)
-- `-m, --moe-backend <name>`  Pass-through to vLLM `--moe-backend` (defaults to `flashinfer_b12x` for `qwen36-nvfp4`, `gemma4-nvfp4`, and `ornith1.0-nvfp4`)
+- `-m, --moe-backend <name>`  Pass-through to vLLM `--moe-backend` (defaults to `flashinfer_b12x` for `qwen36-nvfp4`, `gemma4-nvfp4`, and `ornith-nvfp4`)
 - `-l, --linear-backend <name>`  Pass-through to vLLM `--linear-backend`
 - `-R, --restart-policy <policy>`  Optional Docker restart policy (`on-failure`, `unless-stopped`, etc.)
 
@@ -107,19 +107,19 @@ Service management:
 ```bash
 docker ps -f name=vllm-qwen36-nvfp4
 docker ps -f name=vllm-gemma4-nvfp4
-docker ps -f name=vllm-ornith1.0-nvfp4
+docker ps -f name=vllm-ornith-nvfp4
 
 docker logs -f vllm-qwen36-nvfp4
 # or
 docker logs -f vllm-gemma4-nvfp4
 # or
-docker logs -f vllm-ornith1.0-nvfp4
+docker logs -f vllm-ornith-nvfp4
 
 docker stop vllm-qwen36-nvfp4
 # or
 docker stop vllm-gemma4-nvfp4
 # or
-docker stop vllm-ornith1.0-nvfp4
+docker stop vllm-ornith-nvfp4
 ```
 
 ## Environment variables
@@ -142,7 +142,7 @@ docker stop vllm-ornith1.0-nvfp4
   - `qwen36-fp8`
   - `qwen36-nvfp4`
   - `gemma4-nvfp4`
-  - `ornith1.0-nvfp4`
+  - `ornith-nvfp4`
 - For NVFP4 startup performance tuning, keep warmup enabled unless you intentionally want to skip it.
 - **Pi note:** Pi uses `tool_choice=auto` for tool calling; to support this with vLLM, start with `--reasoning`.
 

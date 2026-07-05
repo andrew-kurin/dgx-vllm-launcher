@@ -22,7 +22,7 @@ uv run dgx-vllm-launcher qwen36-fp8
 uv run dvl qwen36-fp8
 uv run dvl qwen36-nvfp4
 uv run dvl gemma4-nvfp4
-uv run dvl ornith1.0-nvfp4
+uv run dvl ornith-nvfp4
 ```
 
 ## Backward-compatibility changes policy

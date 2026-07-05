@@ -4,13 +4,13 @@ import os
 from dataclasses import dataclass
 from typing import Callable, Literal
 
-Variant = Literal["qwen36-fp8", "qwen36-nvfp4", "gemma4-nvfp4", "ornith1.0-nvfp4"]
+Variant = Literal["qwen36-fp8", "qwen36-nvfp4", "gemma4-nvfp4", "ornith-nvfp4"]
 
 VARIANTS: tuple[Variant, ...] = (
     "qwen36-fp8",
     "qwen36-nvfp4",
     "gemma4-nvfp4",
-    "ornith1.0-nvfp4",
+    "ornith-nvfp4",
 )
 
 MODEL_BASE = "Qwen/Qwen3.6-35B-A3B"
@@ -80,12 +80,12 @@ VARIANT_PROFILES: dict[Variant, VariantProfile] = {
         requires_hf_token=False,
         quantization="modelopt",
     ),
-    "ornith1.0-nvfp4": VariantProfile(
-        variant="ornith1.0-nvfp4",
+    "ornith-nvfp4": VariantProfile(
+        variant="ornith-nvfp4",
         model=ORNITH_MODEL,
         image_env_var="VLLM_IMAGE_ORNITH_NVFP4",
         default_image=DEFAULT_ORNITH_NVFP4_IMAGE,
-        served_model_name="ornith1.0-nvfp4",
+        served_model_name="ornith-nvfp4",
         startup_message="→ Serving Ornith 1.0 35B NVFP4 from Hugging Face...",
         default_moe_backend="flashinfer_b12x",
         requires_hf_token=False,

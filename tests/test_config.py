@@ -82,6 +82,8 @@ def test_variant_profiles_capture_expected_launch_hints():
 
     assert VARIANT_PROFILES["gemma4-nvfp4"].requires_hf_token is False
     assert VARIANT_PROFILES["gemma4-nvfp4"].default_moe_backend is None
+    assert VARIANT_PROFILES["gemma4-nvfp4"].runtime_defaults.reasoning_parser == "gemma4"
+    assert VARIANT_PROFILES["gemma4-nvfp4"].runtime_defaults.tool_call_parser == "gemma4"
     assert VARIANT_PROFILES["gemma4-nvfp4"].inject_hf_token is True
     assert VARIANT_PROFILES["gemma4-nvfp4"].mount_local_model is True
 

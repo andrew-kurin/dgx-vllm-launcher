@@ -42,6 +42,12 @@ class VariantRuntimeDefaults:
 
     moe_backend: str | None = None
     linear_backend: str | None = None
+    reasoning_parser: str = "qwen3"
+    tool_call_parser: str = "qwen3_coder"
+    chat_template: str | None = None
+    max_num_seqs: int = 256
+    max_num_batched_tokens: int = 65536
+    extra_args: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -106,7 +112,22 @@ VARIANT_PROFILES: dict[Variant, VariantProfile] = {
         startup_message="→ Serving Gemma 4 26B A4B-NVFP4 from Hugging Face...",
         # Gemma4 uses GELU_TANH in MoE blocks; the FlashInfer-B12X backend currently does
         # not support this activation in several vLLM releases, so default must be unset.
-        runtime_defaults=VariantRuntimeDefaults(),
+        runtime_defaults=VariantRuntimeDefaults(
+            reasoning_parser="gemma4",
+            tool_call_parser="gemma4",
+            chat_template="/vllm-workspace/examples/tool_chat_template_gemma4.jinja",
+            max_num_seqs=32,
+            max_num_batched_tokens=16384,
+            extra_args=(
+                "--kv-cache-dtype",
+                "fp8",
+                "--limit-mm-per-prompt",
+                '{"image":4,"video":0}',
+                "--mm-processor-kwargs",
+                '{"max_soft_tokens":280}',
+                "--async-scheduling",
+            ),
+        ),
         requires_hf_token=False,
         local_model_path=GEMMA4_LOCAL_NVFP4_PATH,
         mount_local_model=True,

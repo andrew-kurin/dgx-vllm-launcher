@@ -173,8 +173,9 @@ uv run dvl --show-defaults
   - `gemma4-nvfp4`
   - `ornith-nvfp4`
 - For NVFP4 startup performance tuning, keep warmup enabled unless you intentionally want to skip it.
-- If Gemma 4 fails with `GELU_TANH`/`FLASHINFER_B12X` startup errors, launch without forcing `moe-backend` (or run with an explicit supported backend for your image).
-  - Example: `uv run dvl gemma4-nvfp4` (no `--moe-backend`)
+- Gemma 4 keeps multimodal image input enabled but caps vLLM multimodal profiling with `--limit-mm-per-prompt '{"image":4,"video":0}'`, uses the Gemma 4 tool/reasoning parsers when `--reasoning` is set, and uses the vLLM Gemma 4 tool chat template.
+- If Gemma 4 fails with `GELU_TANH`/backend startup errors, launch without forcing `moe-backend` or benchmark `-m marlin -l marlin` on DGX Spark/GB10.
+  - Example: `uv run dvl gemma4-nvfp4 -r -m marlin -l marlin`
 - HF auth token is forwarded to Hugging Face-hosted variants (including Gemma/Ornith) when available, which avoids anonymous Hub warnings.
 - If you hit a startup timeout (often during first-run model download/compilation), rerun with a higher `VLLM_READY_TIMEOUT`, e.g. `VLLM_READY_TIMEOUT=3600 uv run dvl gemma4-nvfp4 --use-preloaded-models`.
 - **Pi note:** Pi uses `tool_choice=auto` for tool calling; to support this with vLLM, start with `--reasoning`.

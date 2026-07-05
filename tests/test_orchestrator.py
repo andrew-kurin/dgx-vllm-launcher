@@ -30,9 +30,30 @@ def test_build_common_args_with_reasoning():
     assert args[idx + 1] == "qwen3"
 
 
+def test_build_common_args_allows_variant_specific_tooling():
+    args = build_common_args(
+        "gemma4-nvfp4",
+        reasoning=True,
+        reasoning_parser="gemma4",
+        tool_call_parser="gemma4",
+        chat_template="/vllm-workspace/examples/tool_chat_template_gemma4.jinja",
+        max_num_seqs=32,
+        max_num_batched_tokens=16384,
+        extra_args=("--limit-mm-per-prompt", '{"image":4,"video":0}'),
+    )
+
+    assert args[args.index("--reasoning-parser") + 1] == "gemma4"
+    assert args[args.index("--tool-call-parser") + 1] == "gemma4"
+    assert args[args.index("--chat-template") + 1].endswith("tool_chat_template_gemma4.jinja")
+    assert args[args.index("--max-num-seqs") + 1] == "32"
+    assert args[args.index("--max-num-batched-tokens") + 1] == "16384"
+    assert args[args.index("--limit-mm-per-prompt") + 1] == '{"image":4,"video":0}'
+
+
 def test_build_start_command_adds_variant_args_and_envs(monkeypatch):
     monkeypatch.setenv("VLLM_MARLIN_USE_ATOMIC_ADD", "0")
     monkeypatch.setenv("VLLM_ENABLE_INDUCTOR_MAX_AUTOTUNE", "0")
+    monkeypatch.setenv("VLLM_NVFP4_GEMM_BACKEND", "marlin")
 
     command = build_start_command(
         variant="qwen36-nvfp4",
@@ -52,6 +73,7 @@ def test_build_start_command_adds_variant_args_and_envs(monkeypatch):
     assert "--quantization" in command
     assert "--moe-backend" in command and "flashinfer_b12x" in command
     assert "-v" in command and "/tmp/cache:/root/.cache/vllm" in command
+    assert "VLLM_NVFP4_GEMM_BACKEND=marlin" in command
 
 
 def test_build_start_command_reuses_host_vllm_cache_dir():
@@ -528,6 +550,49 @@ def test_run_gemma4_no_default_moe_backend(monkeypatch, tmp_path):
     assert code == 0
     assert captured_kwargs["moe_backend"] is None
     assert captured_kwargs["model"] == "nvidia/Gemma-4-26B-A4B-NVFP4"
+    assert captured_kwargs["common_args"][captured_kwargs["common_args"].index("--max-num-seqs") + 1] == "32"
+    assert captured_kwargs["common_args"][captured_kwargs["common_args"].index("--max-num-batched-tokens") + 1] == "16384"
+    assert "--limit-mm-per-prompt" in captured_kwargs["common_args"]
+
+
+def test_run_gemma4_reasoning_uses_gemma4_tooling(monkeypatch, tmp_path):
+    captured_kwargs = {}
+
+    def fake_start_server(**kwargs: object) -> str:
+        captured_kwargs.update(kwargs)
+        return "container-id"
+
+    def fake_wait_for_health(name: str, _timeout_seconds: int, **_kwargs: object) -> bool:
+        assert name == "vllm-gemma4-nvfp4"
+        return True
+
+    monkeypatch.setenv("VLLM_CACHE_DIR", str(tmp_path / "cache-gemma4-reasoning"))
+    monkeypatch.setattr(orchestrator, "start_server", fake_start_server)
+    monkeypatch.setattr(orchestrator, "wait_for_health", fake_wait_for_health)
+    monkeypatch.setattr(orchestrator, "run_warmup", lambda *args, **kwargs: None)
+    monkeypatch.setattr(orchestrator, "smoke_check", lambda *args, **kwargs: None)
+    monkeypatch.setattr(orchestrator, "stream_logs_forever", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(orchestrator, "remove_container_if_exists", lambda _name: None)
+
+    args = cli.LaunchArgs(
+        variant="gemma4-nvfp4",
+        reasoning=True,
+        no_warmup=False,
+        no_smoke_check=False,
+        enable_prefix_caching=False,
+        detach=False,
+        moe_backend=None,
+        linear_backend=None,
+        restart_policy=None,
+    )
+
+    code = orchestrator.run(args)
+    common_args = captured_kwargs["common_args"]
+
+    assert code == 0
+    assert common_args[common_args.index("--reasoning-parser") + 1] == "gemma4"
+    assert common_args[common_args.index("--tool-call-parser") + 1] == "gemma4"
+    assert common_args[common_args.index("--chat-template") + 1].endswith("tool_chat_template_gemma4.jinja")
 
 
 def test_run_qwen36_fp8_does_not_set_default_moe_backend(monkeypatch, tmp_path):

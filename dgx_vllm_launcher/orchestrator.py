@@ -90,7 +90,17 @@ class LogTailer:
         self._proc = None
 
 
-def build_common_args(served_model_name: str, reasoning: bool) -> list[str]:
+def build_common_args(
+    served_model_name: str,
+    reasoning: bool,
+    *,
+    reasoning_parser: str = "qwen3",
+    tool_call_parser: str = "qwen3_coder",
+    chat_template: str | None = None,
+    max_num_seqs: int = 256,
+    max_num_batched_tokens: int = 65536,
+    extra_args: tuple[str, ...] = (),
+) -> list[str]:
     safetensors_load_strategy = os.environ.get("VLLM_SAFETENSORS_LOAD_STRATEGY", "prefetch")
 
     args = [
@@ -105,9 +115,9 @@ def build_common_args(served_model_name: str, reasoning: bool) -> list[str]:
         "--max-model-len",
         "131072",
         "--max-num-seqs",
-        "256",
+        str(max_num_seqs),
         "--max-num-batched-tokens",
-        "65536",
+        str(max_num_batched_tokens),
         "--enable-prefix-caching",
         "--enable-flashinfer-autotune",
         "--safetensors-load-strategy",
@@ -123,13 +133,16 @@ def build_common_args(served_model_name: str, reasoning: bool) -> list[str]:
         args.extend(
             [
                 "--reasoning-parser",
-                "qwen3",
+                reasoning_parser,
                 "--enable-auto-tool-choice",
                 "--tool-call-parser",
-                "qwen3_coder",
+                tool_call_parser,
             ]
         )
+        if chat_template:
+            args.extend(["--chat-template", chat_template])
 
+    args.extend(extra_args)
     return args
 
 
@@ -181,6 +194,7 @@ def build_start_command(
 ) -> list[str]:
     vllm_marin = os.environ.get("VLLM_MARLIN_USE_ATOMIC_ADD", "1")
     vllm_inductor = os.environ.get("VLLM_ENABLE_INDUCTOR_MAX_AUTOTUNE", "1")
+    vllm_nvfp4_gemm_backend = os.environ.get("VLLM_NVFP4_GEMM_BACKEND")
     profile = resolve_variant_profile(variant)
 
     cmd = [
@@ -203,6 +217,9 @@ def build_start_command(
         "-v",
         f"{host_cache_dir}:/root/.cache/vllm",
     ]
+
+    if vllm_nvfp4_gemm_backend:
+        cmd.extend(["-e", f"VLLM_NVFP4_GEMM_BACKEND={vllm_nvfp4_gemm_backend}"])
 
     if restart_policy:
         cmd.extend(["--restart", restart_policy])
@@ -392,6 +409,7 @@ def _format_common_args(args: list[str]) -> Table:
         "--enable-flashinfer-autotune",
         "--trust-remote-code",
         "--enable-auto-tool-choice",
+        "--async-scheduling",
     }
     value_flags = {
         "--host",
@@ -409,6 +427,10 @@ def _format_common_args(args: list[str]) -> Table:
         "--moe-backend",
         "--linear-backend",
         "--quantization",
+        "--chat-template",
+        "--kv-cache-dtype",
+        "--limit-mm-per-prompt",
+        "--mm-processor-kwargs",
     }
 
     i = 0
@@ -508,7 +530,16 @@ def _build_launch_config(args: LaunchArgs):
     profile = resolve_variant_profile(variant)
     warmup_requests = 0 if args.no_warmup else resolve_env_int("VLLM_WARMUP_REQUESTS", 2)
     host_cache_dir = resolve_cache_dir()
-    common_args = build_common_args(variant_config.served_model_name, args.reasoning)
+    common_args = build_common_args(
+        variant_config.served_model_name,
+        args.reasoning,
+        reasoning_parser=profile.runtime_defaults.reasoning_parser,
+        tool_call_parser=profile.runtime_defaults.tool_call_parser,
+        chat_template=profile.runtime_defaults.chat_template,
+        max_num_seqs=profile.runtime_defaults.max_num_seqs,
+        max_num_batched_tokens=profile.runtime_defaults.max_num_batched_tokens,
+        extra_args=profile.runtime_defaults.extra_args,
+    )
     if profile.quantization:
         common_args.extend(["--quantization", profile.quantization])
 

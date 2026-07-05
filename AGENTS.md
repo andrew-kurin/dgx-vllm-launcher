@@ -18,9 +18,12 @@ uv sync --group dev
 
 # Run the launcher
 uv run dgx-vllm-launcher fp8
-# or shorthand
+# or explicit family-prefixed aliases
+uv run dvl-qwen-fp8
+uv run dvl-qwen-nvfp4
+uv run dvl-gemma4-nvfp4
+# or legacy shorthand (still supported)
 uv run dvl fp8
-# or
 uv run dgxvllm nvfp4
 ```
 

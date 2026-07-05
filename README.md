@@ -38,7 +38,16 @@ Run with Python:
 ```bash
 # Full command
 uv run dgx-vllm-launcher fp8
-# short aliases
+
+# Explicit, family-prefixed aliases (recommended):
+# Qwen variants
+uv run dvl-qwen-fp8
+uv run dvl-qwen-nvfp4
+# Gemma variants
+uv run dvl-gemma4-nvfp4
+
+# Legacy short aliases (still supported):
+# dvl requires variant
 uv run dvl fp8
 # nvfp4 uses flashinfer_b12x MoE backend by default
 uv run dgxvllm nvfp4
@@ -46,10 +55,10 @@ uv run dgxvllm nvfp4
 uv run dgxvllm gemma4-nvfp4
 
 # FP8 needs HuggingFace auth; either env token:
-HF_TOKEN=... uv run dvl fp8 --reasoning
+HF_TOKEN=... uv run dvl-qwen-fp8 --reasoning
 # or login once with HF CLI (token is auto-detected):
 # huggingface-cli login
-uv run dvl fp8 --reasoning
+uv run dvl-qwen-fp8 --reasoning
 ```
 Or run as a module:
 
@@ -61,6 +70,8 @@ uv run python -m dgx_vllm_launcher fp8
 
 All commands below accept any of:
 `dgx-vllm-launcher`, `dgxvllm`, or `dvl`
+or explicit aliases:
+`dvl-qwen-fp8`, `dvl-qwen-nvfp4`, `dvl-gemma4-nvfp4`
 
 ```bash
 dgx-vllm-launcher <fp8|nvfp4|gemma4-nvfp4> [-r|--reasoning] [-w|--no-warmup] [-s|--no-smoke-check] [-d|--detach]

@@ -212,6 +212,31 @@ def test_build_start_command_prefers_local_model_with_preloaded_models_dir_overr
     assert command[command.index("vllm-image") + 1] == "/model"
 
 
+def test_build_start_command_prefers_preloaded_model_over_optional_hf_token(tmp_path):
+    preloaded_root = tmp_path / "models"
+    preloaded_model = preloaded_root / "Gemma-4-26B-A4B-NVFP4"
+    preloaded_model.mkdir(parents=True)
+
+    command = build_start_command(
+        variant="gemma4-nvfp4",
+        image="vllm-image",
+        model="nvidia/Gemma-4-26B-A4B-NVFP4",
+        container_name="vllm-gemma4-nvfp4",
+        common_args=["--host", "0.0.0.0", "--quantization", "modelopt"],
+        host_cache_dir="/tmp/cache",
+        restart_policy=None,
+        moe_backend=None,
+        linear_backend=None,
+        hf_token="token123",
+        use_preloaded_models=True,
+        preloaded_models_dir=str(preloaded_root),
+    )
+
+    assert f"-v {preloaded_model}:/model" in " ".join(command)
+    assert command[command.index("vllm-image") + 1] == "/model"
+    assert "HF_TOKEN=token123" not in command
+
+
 def test_build_start_command_injects_optional_hf_token_for_hosted_variants():
     gemma_command = build_start_command(
         variant="gemma4-nvfp4",

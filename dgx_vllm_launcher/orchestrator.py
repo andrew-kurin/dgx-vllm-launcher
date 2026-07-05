@@ -184,11 +184,20 @@ def build_start_command(
     if restart_policy:
         cmd.extend(["--restart", restart_policy])
 
+    local_model_path = None
+    if use_preloaded_models and profile.mount_local_model and profile.local_model_path:
+        preloaded_root = preloaded_models_dir or resolve_preloaded_models_root()
+        candidate_path = _resolve_preloaded_model_path(profile.local_model_path, preloaded_root)
+        if os.path.isdir(candidate_path):
+            local_model_path = candidate_path
+            cmd.extend(["-v", f"{local_model_path}:/model"])
+            model = "/model"
+
     needs_hf_token = profile.requires_hf_token or profile.inject_hf_token
-    if needs_hf_token and not hf_token:
+    if needs_hf_token and not hf_token and not local_model_path:
         if profile.requires_hf_token:
             raise RuntimeError(f"HF token required for {variant}; set HF_TOKEN or run `huggingface-cli login` and retry")
-    if hf_token and needs_hf_token:
+    if hf_token and needs_hf_token and not local_model_path:
         hf_cache = os.path.expanduser("~/.cache/huggingface")
         cmd.extend(
             [
@@ -198,12 +207,6 @@ def build_start_command(
                 f"{hf_cache}:/root/.cache/huggingface",
             ]
         )
-    elif use_preloaded_models and profile.mount_local_model and profile.local_model_path:
-        preloaded_root = preloaded_models_dir or resolve_preloaded_models_root()
-        model_path = _resolve_preloaded_model_path(profile.local_model_path, preloaded_root)
-        if os.path.isdir(model_path):
-            cmd.extend(["-v", f"{model_path}:/model"])
-            model = "/model"
 
     if moe_backend:
         common_args = list(common_args)

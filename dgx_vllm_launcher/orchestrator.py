@@ -137,6 +137,12 @@ def _resolve_preloaded_model_path(local_model_path: str, preloaded_models_dir: s
     return os.path.join(preloaded_models_dir, expanded_path)
 
 
+def _preloaded_model_candidate(profile: VariantProfile, preloaded_models_dir: str) -> str | None:
+    if not profile.mount_local_model or not profile.local_model_path:
+        return None
+    return _resolve_preloaded_model_path(profile.local_model_path, preloaded_models_dir)
+
+
 def build_start_command(
     *,
     variant: Variant,
@@ -185,10 +191,10 @@ def build_start_command(
         cmd.extend(["--restart", restart_policy])
 
     local_model_path = None
-    if use_preloaded_models and profile.mount_local_model and profile.local_model_path:
+    if use_preloaded_models:
         preloaded_root = preloaded_models_dir or resolve_preloaded_models_root()
-        candidate_path = _resolve_preloaded_model_path(profile.local_model_path, preloaded_root)
-        if os.path.isdir(candidate_path):
+        candidate_path = _preloaded_model_candidate(profile, preloaded_root)
+        if candidate_path and os.path.isdir(candidate_path):
             local_model_path = candidate_path
             cmd.extend(["-v", f"{local_model_path}:/model"])
             model = "/model"
@@ -552,6 +558,12 @@ def run(args: LaunchArgs) -> int:
             resolved_linear_backend = plan.profile.default_linear_backend
 
         preloaded_models_dir = resolve_preloaded_models_root(args.preloaded_models_dir)
+        if args.use_preloaded_models:
+            candidate_path = _preloaded_model_candidate(plan.profile, preloaded_models_dir)
+            if candidate_path is None:
+                console.print(f"[yellow]Preloaded models requested, but {variant} has no preloaded model path configured; using configured model ID.[/yellow]")
+            elif not os.path.isdir(candidate_path):
+                console.print(f"[yellow]Preloaded model not found at {candidate_path}; using configured model ID {plan.variant_config.model}.[/yellow]")
 
         container_id = start_server(
             variant=variant,

@@ -1,0 +1,33 @@
+[project]
+name = "qwen-vllm-launcher"
+description = "Launcher for FP8/NVFP4 vLLM serving"
+version = "0.1.0"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+  { name = "Andrew Kurin", email = "me@andrewkurin.com" },
+]
+dependencies = [
+  "rich>=13.7,<14",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pyright>=1.1.400",
+  "ruff>=0.5",
+  "pytest>=8.3.5",
+]
+
+[project.scripts]
+qwen-vllm-launcher = "qwen_vllm_launcher.orchestrator:main"
+check = "qwen_vllm_launcher.check:main"
+
+[dependency-groups]
+dev = [
+  "pyright>=1.1.400",
+  "ruff>=0.5",
+  "pytest>=8.3.5",
+]
+
+[tool.uv]
+package = true

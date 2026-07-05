@@ -472,13 +472,17 @@ def run(args: LaunchArgs) -> int:
 
         console.print(f"[green]{message}[/green]")
 
+        resolved_moe_backend = args.moe_backend
+        if args.variant == "nvfp4" and resolved_moe_backend is None:
+            resolved_moe_backend = "flashinfer_b12x"
+
         container_id = start_server(
             variant=args.variant,
             image=variant_config.image,
             model=variant_config.model,
             container_name=container_name,
             common_args=common_args,
-            moe_backend=args.moe_backend,
+            moe_backend=resolved_moe_backend,
             linear_backend=args.linear_backend,
             restart_policy=args.restart_policy,
             host_cache_dir=host_cache_dir,

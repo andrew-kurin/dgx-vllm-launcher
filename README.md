@@ -39,7 +39,8 @@ Run with Python:
 uv run dgx-vllm-launcher fp8
 # Short aliases
 uv run dvl fp8
-uv run dgxvllm nvfp4 --moe-backend flashinfer_b12x
+# nvfp4 uses flashinfer_b12x MoE backend by default
+uv run dgxvllm nvfp4
 ```
 Or run as a module:
 
@@ -69,7 +70,7 @@ dgx-vllm-launcher <fp8|nvfp4> [-r|--reasoning] [-w|--no-warmup] [-s|--no-smoke-c
 - `-s, --no-smoke-check`  Skip post-startup smoke check request
 - `-d, --detach`  Exit after health/warmup/smoke checks, leaving container running in Docker
 - `-p, --enable-prefix-caching`  Alias flag kept for compatibility (prefix caching is enabled by default)
-- `-m, --moe-backend <name>`  Pass-through to vLLM `--moe-backend`
+- `-m, --moe-backend <name>`  Pass-through to vLLM `--moe-backend` (defaults to `flashinfer_b12x` for `nvfp4`)
 - `-l, --linear-backend <name>`  Pass-through to vLLM `--linear-backend`
 - `-R, --restart-policy <policy>`  Optional Docker restart policy (`on-failure`, `unless-stopped`, etc.)
 

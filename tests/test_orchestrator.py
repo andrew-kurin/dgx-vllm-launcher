@@ -255,3 +255,77 @@ def test_run_stream_mode_stops_container_on_exit(monkeypatch, tmp_path):
     assert code == 0
     assert calls["stream"] == 1
     assert calls["remove"] == 2
+
+
+def test_run_nvfp4_defaults_moe_backend(monkeypatch, tmp_path):
+    captured_kwargs = {}
+
+    def fake_start_server(**kwargs: object) -> str:
+        captured_kwargs.update(kwargs)
+        return "container-id"
+
+    def fake_wait_for_health(name: str, _timeout_seconds: int, **_kwargs: object) -> bool:
+        assert name == "vllm-nvfp4"
+        return True
+
+    monkeypatch.setenv("VLLM_CACHE_DIR", str(tmp_path / "cache3"))
+    monkeypatch.setattr(orchestrator, "start_server", fake_start_server)
+    monkeypatch.setattr(orchestrator, "wait_for_health", fake_wait_for_health)
+    monkeypatch.setattr(orchestrator, "run_warmup", lambda *args, **kwargs: None)
+    monkeypatch.setattr(orchestrator, "smoke_check", lambda *args, **kwargs: None)
+    monkeypatch.setattr(orchestrator, "stream_logs_forever", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(orchestrator, "remove_container_if_exists", lambda _name: None)
+
+    args = cli.LaunchArgs(
+        variant="nvfp4",
+        reasoning=False,
+        no_warmup=False,
+        no_smoke_check=False,
+        enable_prefix_caching=False,
+        detach=False,
+        moe_backend=None,
+        linear_backend=None,
+        restart_policy=None,
+    )
+
+    code = orchestrator.run(args)
+
+    assert code == 0
+    assert captured_kwargs["moe_backend"] == "flashinfer_b12x"
+
+
+def test_run_fp8_does_not_set_default_moe_backend(monkeypatch, tmp_path):
+    captured_kwargs = {}
+
+    def fake_start_server(**kwargs: object) -> str:
+        captured_kwargs.update(kwargs)
+        return "container-id"
+
+    def fake_wait_for_health(name: str, _timeout_seconds: int, **_kwargs: object) -> bool:
+        assert name == "vllm-fp8"
+        return True
+
+    monkeypatch.setenv("VLLM_CACHE_DIR", str(tmp_path / "cache4"))
+    monkeypatch.setattr(orchestrator, "start_server", fake_start_server)
+    monkeypatch.setattr(orchestrator, "wait_for_health", fake_wait_for_health)
+    monkeypatch.setattr(orchestrator, "run_warmup", lambda *args, **kwargs: None)
+    monkeypatch.setattr(orchestrator, "smoke_check", lambda *args, **kwargs: None)
+    monkeypatch.setattr(orchestrator, "stream_logs_forever", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(orchestrator, "remove_container_if_exists", lambda _name: None)
+
+    args = cli.LaunchArgs(
+        variant="fp8",
+        reasoning=False,
+        no_warmup=False,
+        no_smoke_check=False,
+        enable_prefix_caching=False,
+        detach=False,
+        moe_backend=None,
+        linear_backend=None,
+        restart_policy=None,
+    )
+
+    code = orchestrator.run(args)
+
+    assert code == 0
+    assert captured_kwargs["moe_backend"] is None

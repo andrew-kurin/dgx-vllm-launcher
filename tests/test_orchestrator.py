@@ -85,6 +85,25 @@ def test_build_start_command_reuses_host_vllm_cache_dir():
     assert "/root/.cache/huggingface" in " ".join(fp8_command)
 
 
+def test_build_start_command_gemma4_does_not_mount_local_qwen_model(monkeypatch):
+    command = build_start_command(
+        variant="gemma4-nvfp4",
+        image="vllm-image",
+        model="nvidia/Gemma-4-26B-A4B-NVFP4",
+        container_name="vllm-gemma4-nvfp4",
+        common_args=["--host", "0.0.0.0", "--quantization", "modelopt"],
+        host_cache_dir="/tmp/cache",
+        restart_policy=None,
+        moe_backend=None,
+        linear_backend=None,
+        hf_token=None,
+    )
+
+    assert "/tmp/cache:/root/.cache/vllm" in " ".join(command)
+    assert "Qwen3.6-35B-A3B-NVFP4" not in " ".join(command)
+    assert "/root/.cache/huggingface" not in " ".join(command)
+
+
 def test_run_warmup_uses_sender_callable(tmp_path):
     calls = []
 
@@ -292,6 +311,44 @@ def test_run_nvfp4_defaults_moe_backend(monkeypatch, tmp_path):
 
     assert code == 0
     assert captured_kwargs["moe_backend"] == "flashinfer_b12x"
+
+
+def test_run_gemma4_defaults_moe_backend(monkeypatch, tmp_path):
+    captured_kwargs = {}
+
+    def fake_start_server(**kwargs: object) -> str:
+        captured_kwargs.update(kwargs)
+        return "container-id"
+
+    def fake_wait_for_health(name: str, _timeout_seconds: int, **_kwargs: object) -> bool:
+        assert name == "vllm-gemma4-nvfp4"
+        return True
+
+    monkeypatch.setenv("VLLM_CACHE_DIR", str(tmp_path / "cache-gemma4"))
+    monkeypatch.setattr(orchestrator, "start_server", fake_start_server)
+    monkeypatch.setattr(orchestrator, "wait_for_health", fake_wait_for_health)
+    monkeypatch.setattr(orchestrator, "run_warmup", lambda *args, **kwargs: None)
+    monkeypatch.setattr(orchestrator, "smoke_check", lambda *args, **kwargs: None)
+    monkeypatch.setattr(orchestrator, "stream_logs_forever", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(orchestrator, "remove_container_if_exists", lambda _name: None)
+
+    args = cli.LaunchArgs(
+        variant="gemma4-nvfp4",
+        reasoning=False,
+        no_warmup=False,
+        no_smoke_check=False,
+        enable_prefix_caching=False,
+        detach=False,
+        moe_backend=None,
+        linear_backend=None,
+        restart_policy=None,
+    )
+
+    code = orchestrator.run(args)
+
+    assert code == 0
+    assert captured_kwargs["moe_backend"] == "flashinfer_b12x"
+    assert captured_kwargs["model"] == "nvidia/Gemma-4-26B-A4B-NVFP4"
 
 
 def test_run_fp8_does_not_set_default_moe_backend(monkeypatch, tmp_path):

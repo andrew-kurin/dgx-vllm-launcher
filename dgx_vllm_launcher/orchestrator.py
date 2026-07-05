@@ -205,7 +205,7 @@ def build_start_command(
                 f"{hf_cache}:/root/.cache/huggingface",
             ]
         )
-    else:
+    elif variant == "nvfp4":
         model_path = os.path.expanduser("~/models/Qwen3.6-35B-A3B-NVFP4")
         cmd.extend(["-v", f"{model_path}:/model"])
 
@@ -459,7 +459,7 @@ def _build_launch_config(args: LaunchArgs):
     warmup_requests = 0 if args.no_warmup else resolve_env_int("VLLM_WARMUP_REQUESTS", 2)
     host_cache_dir = resolve_cache_dir()
     common_args = build_common_args(variant_config.served_model_name, args.reasoning)
-    if args.variant == "nvfp4":
+    if args.variant in {"nvfp4", "gemma4-nvfp4"}:
         common_args.extend(["--quantization", "modelopt"])
 
     return variant_config, warmup_requests, host_cache_dir, common_args
@@ -490,13 +490,15 @@ def run(args: LaunchArgs) -> int:
     try:
         if args.variant == "fp8":
             message = f"→ Serving {MODEL_BASE}-FP8 from HuggingFace..."
+        elif args.variant == "nvfp4":
+            message = "→ Serving local Qwen3.6 NVFP4 model..."
         else:
-            message = "→ Serving local NVFP4 model..."
+            message = "→ Serving Gemma 4 26B A4B-NVFP4 from Hugging Face..."
 
         console.print(f"[green]{message}[/green]")
 
         resolved_moe_backend = args.moe_backend
-        if args.variant == "nvfp4" and resolved_moe_backend is None:
+        if args.variant in {"nvfp4", "gemma4-nvfp4"} and resolved_moe_backend is None:
             resolved_moe_backend = "flashinfer_b12x"
 
         container_id = start_server(

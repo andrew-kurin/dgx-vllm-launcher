@@ -4,12 +4,14 @@ from dataclasses import dataclass
 from typing import Literal, Callable
 import os
 
-Variant = Literal["fp8", "nvfp4"]
+Variant = Literal["fp8", "nvfp4", "gemma4-nvfp4"]
 
 MODEL_BASE = "Qwen/Qwen3.6-35B-A3B"
+GEMMA4_MODEL = "nvidia/Gemma-4-26B-A4B-NVFP4"
 
 DEFAULT_FP8_IMAGE = "vllm/vllm-openai:nightly"
 DEFAULT_NVFP4_IMAGE = "vllm/vllm-openai@sha256:7feb2a09304e3b2d38e224a100316e84fe3205faa7605060609e2c02179cbca6"
+DEFAULT_GEMMA4_NVFP4_IMAGE = DEFAULT_NVFP4_IMAGE
 
 DEFAULT_READY_TIMEOUT = 1800
 DEFAULT_VLLM_CACHE_DIR = "~/.cache/vllm"
@@ -50,6 +52,13 @@ def resolve_variant_config(variant: Variant, env_getter: Callable[[str, str], st
             DEFAULT_NVFP4_IMAGE,
         )
         served = "qwen36-nvfp4"
+    elif variant == "gemma4-nvfp4":
+        model = GEMMA4_MODEL
+        image = env_getter(
+            "VLLM_IMAGE_GEMMA4_NVFP4",
+            DEFAULT_GEMMA4_NVFP4_IMAGE,
+        )
+        served = "gemma4-nvfp4"
     else:
         raise ValueError(f"unsupported variant: {variant}")
 

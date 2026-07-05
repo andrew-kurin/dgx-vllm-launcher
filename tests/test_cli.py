@@ -46,6 +46,12 @@ def test_parse_args_flags():
     assert args.restart_policy == "on-failure"
 
 
+def test_parse_args_gemma4_variant():
+    args = cli.parse_args(["gemma4-nvfp4", "--restart-policy", "unless-stopped"])
+    assert args.variant == "gemma4-nvfp4"
+    assert args.restart_policy == "unless-stopped"
+
+
 def test_parse_args_short_flags():
     args = cli.parse_args(
         [

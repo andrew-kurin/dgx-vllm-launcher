@@ -4,6 +4,7 @@ from dgx_vllm_launcher.config import (
     DEFAULT_READY_TIMEOUT,
     DEFAULT_FP8_IMAGE,
     DEFAULT_NVFP4_IMAGE,
+    DEFAULT_GEMMA4_NVFP4_IMAGE,
     resolve_variant_config,
     resolve_cache_dir,
 )
@@ -28,6 +29,14 @@ def test_resolve_variant_config_nvfp4_defaults_and_unified_env_override():
     assert cfg.image == DEFAULT_NVFP4_IMAGE
     assert cfg.served_model_name == "qwen36-nvfp4"
     assert cfg.ready_timeout_seconds == 42
+
+
+def test_resolve_variant_config_gemma4_defaults():
+    cfg = resolve_variant_config("gemma4-nvfp4", env_getter=lambda key, default: default)
+    assert cfg.model == "nvidia/Gemma-4-26B-A4B-NVFP4"
+    assert cfg.image == DEFAULT_GEMMA4_NVFP4_IMAGE
+    assert cfg.served_model_name == "gemma4-nvfp4"
+    assert cfg.ready_timeout_seconds == DEFAULT_READY_TIMEOUT
 
 
 def test_resolve_variant_config_fp8_respects_unified_timeout():

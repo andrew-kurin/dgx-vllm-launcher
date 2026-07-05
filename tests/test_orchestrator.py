@@ -156,6 +156,30 @@ def test_build_start_command_prefers_local_model_when_preloaded(tmp_path, monkey
     assert command[command.index("vllm-image") + 1] == "/model"
 
 
+def test_build_start_command_prefers_local_model_with_preloaded_models_dir_override(tmp_path):
+    preloaded_root = tmp_path / "models"
+    preloaded_model = preloaded_root / "Qwen3.6-35B-A3B-NVFP4"
+    preloaded_model.mkdir(parents=True)
+
+    command = build_start_command(
+        variant="qwen36-nvfp4",
+        image="vllm-image",
+        model="Qwen/Qwen3.6-35B-A3B-NVFP4",
+        container_name="vllm-qwen36-nvfp4",
+        common_args=["--host", "0.0.0.0", "--quantization", "modelopt"],
+        host_cache_dir="/tmp/cache",
+        restart_policy=None,
+        moe_backend=None,
+        linear_backend=None,
+        hf_token=None,
+        use_preloaded_models=True,
+        preloaded_models_dir=str(preloaded_root),
+    )
+
+    assert f"-v {preloaded_model}:/model" in " ".join(command)
+    assert command[command.index("vllm-image") + 1] == "/model"
+
+
 def test_build_start_command_injects_optional_hf_token_for_hosted_variants():
     gemma_command = build_start_command(
         variant="gemma4-nvfp4",
@@ -389,6 +413,46 @@ def test_run_show_defaults_without_starting_container(monkeypatch, tmp_path):
 
     assert code == 0
     assert calls["printed"] == 1
+
+
+def test_run_forwards_preloaded_models_dir_override(monkeypatch, tmp_path):
+    captured_kwargs = {}
+
+    def fake_start_server(**kwargs: object) -> str:
+        captured_kwargs.update(kwargs)
+        return "container-id"
+
+    def fake_wait_for_health(name: str, _timeout_seconds: int, **_kwargs: object) -> bool:
+        assert name == "vllm-qwen36-nvfp4"
+        return True
+
+    monkeypatch.setenv("VLLM_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setattr(orchestrator, "start_server", fake_start_server)
+    monkeypatch.setattr(orchestrator, "wait_for_health", fake_wait_for_health)
+    monkeypatch.setattr(orchestrator, "run_warmup", lambda *args, **kwargs: None)
+    monkeypatch.setattr(orchestrator, "smoke_check", lambda *args, **kwargs: None)
+    monkeypatch.setattr(orchestrator, "stream_logs_forever", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(orchestrator, "remove_container_if_exists", lambda _name: None)
+
+    args = cli.LaunchArgs(
+        variant="qwen36-nvfp4",
+        reasoning=False,
+        no_warmup=False,
+        no_smoke_check=False,
+        enable_prefix_caching=False,
+        detach=False,
+        moe_backend=None,
+        linear_backend=None,
+        restart_policy=None,
+        use_preloaded_models=True,
+        preloaded_models_dir="/opt/models",
+    )
+
+    code = orchestrator.run(args)
+
+    assert code == 0
+    assert captured_kwargs["preloaded_models_dir"] == "/opt/models"
+    assert captured_kwargs["use_preloaded_models"] is True
 
 
 def test_run_qwen36_nvfp4_defaults_moe_backend(monkeypatch, tmp_path):

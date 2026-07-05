@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+import os
+
 from dgx_vllm_launcher.config import (
     DEFAULT_READY_TIMEOUT,
     DEFAULT_FP8_IMAGE,
     DEFAULT_NVFP4_IMAGE,
+    DEFAULT_PRELOADED_MODELS_DIR,
     DEFAULT_GEMMA4_NVFP4_IMAGE,
     DEFAULT_ORNITH_NVFP4_IMAGE,
     VARIANTS,
     VARIANT_PROFILES,
     resolve_variant_config,
     resolve_cache_dir,
+    resolve_preloaded_models_root,
 )
 
 
@@ -86,6 +90,19 @@ def test_variant_profiles_capture_expected_launch_hints():
     assert VARIANT_PROFILES["ornith-nvfp4"].inject_hf_token is True
     assert VARIANT_PROFILES["ornith-nvfp4"].mount_local_model is True
     assert VARIANT_PROFILES["ornith-nvfp4"].quantization == "modelopt"
+
+def test_resolve_preloaded_models_root_default():
+    value = resolve_preloaded_models_root(env_getter=lambda key, default: default)
+    assert value == os.path.expanduser(DEFAULT_PRELOADED_MODELS_DIR)
+
+
+def test_resolve_preloaded_models_root_override():
+    value = resolve_preloaded_models_root(
+        override_root="/tmp/models",
+        env_getter=lambda key, default: default,
+    )
+    assert value == "/tmp/models"
+
 
 def test_resolve_cache_dir_uses_env_override():
     value = resolve_cache_dir(env_getter=lambda key, default: "/tmp/custom-cache")

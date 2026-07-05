@@ -19,6 +19,7 @@ from .config import (
     Variant,
     resolve_cache_dir,
     resolve_env_int,
+    resolve_preloaded_models_root,
     resolve_variant_config,
     resolve_variant_profile,
 )
@@ -155,6 +156,14 @@ def _resolve_hf_token() -> str | None:
     return None
 
 
+def _resolve_preloaded_model_path(local_model_path: str, preloaded_models_dir: str) -> str:
+    expanded_path = os.path.expanduser(local_model_path)
+    if os.path.isabs(expanded_path):
+        return expanded_path
+
+    return os.path.join(preloaded_models_dir, expanded_path)
+
+
 def build_start_command(
     *,
     variant: Variant,
@@ -168,6 +177,7 @@ def build_start_command(
     linear_backend: str | None,
     hf_token: str | None,
     use_preloaded_models: bool = False,
+    preloaded_models_dir: str | None = None,
 ) -> list[str]:
     vllm_marin = os.environ.get("VLLM_MARLIN_USE_ATOMIC_ADD", "1")
     vllm_inductor = os.environ.get("VLLM_ENABLE_INDUCTOR_MAX_AUTOTUNE", "1")
@@ -212,7 +222,8 @@ def build_start_command(
             ]
         )
     elif use_preloaded_models and profile.mount_local_model and profile.local_model_path:
-        model_path = os.path.expanduser(profile.local_model_path)
+        preloaded_root = preloaded_models_dir or resolve_preloaded_models_root()
+        model_path = _resolve_preloaded_model_path(profile.local_model_path, preloaded_root)
         if os.path.isdir(model_path):
             cmd.extend(["-v", f"{model_path}:/model"])
             model = "/model"
@@ -241,6 +252,7 @@ def start_server(
     restart_policy: str | None,
     host_cache_dir: str,
     use_preloaded_models: bool = False,
+    preloaded_models_dir: str | None = None,
 ) -> str:
     profile = resolve_variant_profile(variant)
     hf_token = _resolve_hf_token() if (profile.requires_hf_token or profile.inject_hf_token) else None
@@ -257,6 +269,7 @@ def start_server(
         linear_backend=linear_backend,
         hf_token=hf_token,
         use_preloaded_models=use_preloaded_models,
+        preloaded_models_dir=preloaded_models_dir,
     )
 
     proc = run_docker(cmd, check=True, capture_output=True)
@@ -543,6 +556,8 @@ def run(args: LaunchArgs) -> int:
         if resolved_linear_backend is None:
             resolved_linear_backend = profile.default_linear_backend
 
+        preloaded_models_dir = resolve_preloaded_models_root(args.preloaded_models_dir)
+
         container_id = start_server(
             variant=variant,
             image=variant_config.image,
@@ -554,6 +569,7 @@ def run(args: LaunchArgs) -> int:
             restart_policy=args.restart_policy,
             host_cache_dir=host_cache_dir,
             use_preloaded_models=args.use_preloaded_models,
+            preloaded_models_dir=preloaded_models_dir,
         )
         started = True
 

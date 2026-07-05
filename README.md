@@ -8,6 +8,7 @@ This project provides a single Python entrypoint for running either:
 
 - `qwen36-fp8` model from Hugging Face
 - `qwen36-nvfp4` model from Hugging Face `Qwen/Qwen3.6-35B-A3B-NVFP4` (local preloaded fallback with `--use-preloaded-models`)
+  - preloading defaults to `~/models`, override with `--preloaded-models-dir` or `VLLM_PRELOADED_MODELS_DIR`
 - `gemma4-nvfp4` model from Hugging Face `nvidia/Gemma-4-26B-A4B-NVFP4`
 - `ornith-nvfp4` model from Hugging Face `sakamakismile/Ornith-1.0-35B-NVFP4`
 
@@ -68,7 +69,7 @@ Use `--show-defaults` for a global profile overview without specifying a variant
 
 ```bash
 dgx-vllm-launcher [qwen36-fp8|qwen36-nvfp4|gemma4-nvfp4|ornith-nvfp4] [-r|--reasoning] [-w|--no-warmup] [-s|--no-smoke-check] [-d|--detach]
-                      [-p|--enable-prefix-caching] [-m|--moe-backend <name>] [-l|--linear-backend <name>] [--use-preloaded-models] [-R|--restart-policy <policy>] [--show-defaults]
+                      [-p|--enable-prefix-caching] [-m|--moe-backend <name>] [--preloaded-models-dir <path>] [-l|--linear-backend <name>] [--use-preloaded-models] [-R|--restart-policy <policy>] [--show-defaults]
 
 # Global default inspection
  dvl --show-defaults
@@ -95,6 +96,7 @@ dgx-vllm-launcher [qwen36-fp8|qwen36-nvfp4|gemma4-nvfp4|ornith-nvfp4] [-r|--reas
 - `-p, --enable-prefix-caching`  Alias flag kept for compatibility (prefix caching is enabled by default)
 - `-m, --moe-backend <name>`  Pass-through to vLLM `--moe-backend` (defaults to `flashinfer_b12x` for `qwen36-nvfp4`; other variants default to `(none)`)
 - `--show-defaults`  Show the preferred default launch profile for each supported variant and exit
+- `--preloaded-models-dir <path>`  Override root directory for preloaded checkpoints (defaults to `~/models` or `VLLM_PRELOADED_MODELS_DIR`)
 - `--use-preloaded-models`  Prefer preloaded checkpoints from `~/models` when available; otherwise pull from Hugging Face Hub
 - `-l, --linear-backend <name>`  Pass-through to vLLM `--linear-backend`
 - `-R, --restart-policy <policy>`  Optional Docker restart policy (`on-failure`, `unless-stopped`, etc.)
@@ -134,6 +136,7 @@ docker stop vllm-ornith-nvfp4
 ## Environment variables
 
 - `HF_TOKEN` (required for `qwen36-fp8`; optional for hosted models like `gemma4-nvfp4`/`ornith-nvfp4`; also honored from `HUGGING_FACE_HUB_TOKEN`)
+- `VLLM_PRELOADED_MODELS_DIR` (default root for local preloads; default `~/models`)
 - `~/models` (default root for `--use-preloaded-models`): if present, mounts model checkpoint directory and serves `/model`
 - `~/.cache/huggingface` (mounted when HF auth token is injected)
 - `VLLM_WARMUP_REQUESTS` (default `2`)

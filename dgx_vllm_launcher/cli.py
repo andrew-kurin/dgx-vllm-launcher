@@ -18,6 +18,7 @@ class LaunchArgs:
     linear_backend: str | None = None
     restart_policy: str | None = None
     use_preloaded_models: bool = False
+    preloaded_models_dir: str | None = None
     show_defaults: bool = False
 
 
@@ -68,7 +69,12 @@ def parse_args(argv: list[str] | None = None) -> LaunchArgs:
     parser.add_argument(
         "--use-preloaded-models",
         action="store_true",
-        help="Prefer preloaded Hugging Face checkpoints in ~/models when they exist; otherwise pull from Hub.",
+        help="Prefer preloaded Hugging Face checkpoints in ~/models (or --preloaded-models-dir) when they exist; otherwise pull from Hub.",
+    )
+    parser.add_argument(
+        "--preloaded-models-dir",
+        type=str,
+        help="Override the default preloaded-models root path (default from VLLM_PRELOADED_MODELS_DIR or ~/models).",
     )
     parser.add_argument(
         "--show-defaults",
@@ -92,5 +98,6 @@ def parse_args(argv: list[str] | None = None) -> LaunchArgs:
         linear_backend=ns.linear_backend,
         restart_policy=ns.restart_policy,
         use_preloaded_models=ns.use_preloaded_models,
+        preloaded_models_dir=ns.preloaded_models_dir,
         show_defaults=ns.show_defaults,
     )

@@ -16,10 +16,11 @@ VARIANTS: tuple[Variant, ...] = (
 MODEL_BASE = "Qwen/Qwen3.6-35B-A3B"
 GEMMA4_MODEL = "nvidia/Gemma-4-26B-A4B-NVFP4"
 ORNITH_MODEL = "sakamakismile/Ornith-1.0-35B-NVFP4"
-QWEN_LOCAL_NVFP4_PATH = "~/models/Qwen3.6-35B-A3B-NVFP4"
-GEMMA4_LOCAL_NVFP4_PATH = "~/models/Gemma-4-26B-A4B-NVFP4"
-ORNITH_LOCAL_NVFP4_PATH = "~/models/Ornith-1.0-35B-NVFP4"
+QWEN_LOCAL_NVFP4_PATH = "Qwen3.6-35B-A3B-NVFP4"
+GEMMA4_LOCAL_NVFP4_PATH = "Gemma-4-26B-A4B-NVFP4"
+ORNITH_LOCAL_NVFP4_PATH = "Ornith-1.0-35B-NVFP4"
 
+DEFAULT_PRELOADED_MODELS_DIR = "~/models"
 QWEN_NVFP4_HF_MODEL = "Qwen/Qwen3.6-35B-A3B-NVFP4"
 
 DEFAULT_FP8_IMAGE = "vllm/vllm-openai:nightly"
@@ -179,6 +180,16 @@ def resolve_variant_config(variant: Variant, env_getter: Callable[[str, str], st
 
 def resolve_cache_dir(env_getter: Callable[[str, str], str] = os.getenv) -> str:
     return os.path.expanduser(env_getter("VLLM_CACHE_DIR", DEFAULT_VLLM_CACHE_DIR))
+
+
+def resolve_preloaded_models_root(
+    override_root: str | None = None,
+    env_getter: Callable[[str, str], str] = os.getenv,
+) -> str:
+    """Resolve the base directory for local preloaded checkpoints."""
+    if override_root is None:
+        override_root = env_getter("VLLM_PRELOADED_MODELS_DIR", DEFAULT_PRELOADED_MODELS_DIR)
+    return os.path.expanduser(override_root)
 
 
 def resolve_env_int(name: str, default: int, env_getter: Callable[[str, str], str] = os.getenv) -> int:

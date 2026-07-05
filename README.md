@@ -35,10 +35,12 @@ uv sync --group dev
 Run with Python:
 
 ```bash
+# Full command
 uv run dgx-vllm-launcher fp8
-uv run dgx-vllm-launcher nvfp4 --moe-backend flashinfer_b12x
+# Short aliases
+uv run dvl fp8
+uv run dgxvllm nvfp4 --moe-backend flashinfer_b12x
 ```
-
 Or run as a module:
 
 ```bash
@@ -46,6 +48,9 @@ uv run python -m dgx_vllm_launcher fp8
 ```
 
 ## Command-line usage
+
+All commands below accept any of:
+`dgx-vllm-launcher`, `dgxvllm`, or `dvl`
 
 ```bash
 dgx-vllm-launcher <fp8|nvfp4> [-r|--reasoning] [-w|--no-warmup] [-s|--no-smoke-check] [-d|--detach]

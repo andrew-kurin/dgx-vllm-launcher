@@ -18,6 +18,8 @@ uv sync --group dev
 
 # Run the launcher
 uv run dgx-vllm-launcher fp8
+# or shorthand
+uv run dvl fp8
 # or
-uv run dgx-vllm-launcher nvfp4
+uv run dgxvllm nvfp4
 ```

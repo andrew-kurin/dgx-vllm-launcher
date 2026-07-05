@@ -20,6 +20,8 @@ dev = [
 
 [project.scripts]
 dgx-vllm-launcher = "dgx_vllm_launcher.orchestrator:main"
+dgxvllm = "dgx_vllm_launcher.orchestrator:main"
+dvl = "dgx_vllm_launcher.orchestrator:main"
 check = "dgx_vllm_launcher.check:main"
 
 [dependency-groups]

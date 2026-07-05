@@ -140,7 +140,7 @@ docker stop vllm-ornith-nvfp4
 - `~/models` (default root for `--use-preloaded-models`): if present, mounts model checkpoint directory and serves `/model`
 - `~/.cache/huggingface` (mounted when HF auth token is injected)
 - `VLLM_WARMUP_REQUESTS` (default `2`)
-- `VLLM_READY_TIMEOUT` (default `1800`) applies to all variants
+- `VLLM_READY_TIMEOUT` (default `1800`) applies to all variants; `gemma4-nvfp4` first run may require increasing this to `3600` or more
 - `VLLM_CACHE_DIR` (default `~/.cache/vllm`)
 - `VLLM_IMAGE_FP8` (default `vllm/vllm-openai:nightly`)
 - `VLLM_IMAGE_NVFP4` (default `vllm/vllm-openai@sha256:7feb2a09304e3b2d38e224a100316e84fe3205faa7605060609e2c02179cbca6`)
@@ -176,6 +176,7 @@ uv run dvl --show-defaults
 - If Gemma 4 fails with `GELU_TANH`/`FLASHINFER_B12X` startup errors, launch without forcing `moe-backend` (or run with an explicit supported backend for your image).
   - Example: `uv run dvl gemma4-nvfp4` (no `--moe-backend`)
 - HF auth token is forwarded to Hugging Face-hosted variants (including Gemma/Ornith) when available, which avoids anonymous Hub warnings.
+- If you hit a startup timeout (often during first-run model download/compilation), rerun with a higher `VLLM_READY_TIMEOUT`, e.g. `VLLM_READY_TIMEOUT=3600 uv run dvl gemma4-nvfp4 --use-preloaded-models`.
 - **Pi note:** Pi uses `tool_choice=auto` for tool calling; to support this with vLLM, start with `--reasoning`.
 
 ## Developer quickstart

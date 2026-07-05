@@ -46,6 +46,35 @@ def test_parse_args_flags():
     assert args.restart_policy == "on-failure"
 
 
+def test_parse_args_short_flags():
+    args = cli.parse_args(
+        [
+            "nvfp4",
+            "-r",
+            "-w",
+            "-s",
+            "-d",
+            "-p",
+            "-m",
+            "flashinfer_b12x",
+            "-l",
+            "flashinfer",
+            "-R",
+            "unless-stopped",
+        ]
+    )
+
+    assert args.variant == "nvfp4"
+    assert args.reasoning is True
+    assert args.no_warmup is True
+    assert args.no_smoke_check is True
+    assert args.detach is True
+    assert args.enable_prefix_caching is True
+    assert args.moe_backend == "flashinfer_b12x"
+    assert args.linear_backend == "flashinfer"
+    assert args.restart_policy == "unless-stopped"
+
+
 def test_parse_args_rejects_invalid_variant():
     try:
         cli.parse_args(["bad"])

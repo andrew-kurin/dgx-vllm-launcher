@@ -29,26 +29,30 @@ def parse_args(argv: list[str] | None = None) -> LaunchArgs:
         choices=["fp8", "nvfp4"],
         help="fp8 or nvfp4",
     )
-    parser.add_argument("--reasoning", action="store_true", help="Enable Qwen reasoning parser + tool-choice path")
-    parser.add_argument("--no-warmup", action="store_true", help="Skip pre-startup warmup requests")
+    parser.add_argument("-r", "--reasoning", action="store_true", help="Enable Qwen reasoning parser + tool-choice path")
+    parser.add_argument("-w", "--no-warmup", action="store_true", help="Skip pre-startup warmup requests")
     parser.add_argument(
+        "-s",
         "--no-smoke-check",
         action="store_true",
         help="Skip post-startup smoke check",
     )
     parser.add_argument(
+        "-d",
         "--detach",
         action="store_true",
         help="Run startup checks then exit, leaving container running",
     )
     parser.add_argument(
+        "-p",
         "--enable-prefix-caching",
         action="store_true",
         help="Alias/no-op; prefix caching is enabled by default.",
     )
-    parser.add_argument("--moe-backend", type=str, help="Pass through to vLLM --moe-backend")
-    parser.add_argument("--linear-backend", type=str, help="Pass through to vLLM --linear-backend")
+    parser.add_argument("-m", "--moe-backend", type=str, help="Pass through to vLLM --moe-backend")
+    parser.add_argument("-l", "--linear-backend", type=str, help="Pass through to vLLM --linear-backend")
     parser.add_argument(
+        "-R",
         "--restart-policy",
         type=str,
         help="Optional Docker restart policy (for example: on-failure, unless-stopped)",

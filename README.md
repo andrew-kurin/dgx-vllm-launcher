@@ -48,8 +48,8 @@ uv run python -m qwen_vllm_launcher fp8
 ## Command-line usage
 
 ```bash
-qwen-vllm-launcher <fp8|nvfp4> [--reasoning] [--no-warmup] [--no-smoke-check] [--detach]
-                      [--enable-prefix-caching] [--moe-backend <name>] [--linear-backend <name>] [--restart-policy <policy>]
+qwen-vllm-launcher <fp8|nvfp4> [-r|--reasoning] [-w|--no-warmup] [-s|--no-smoke-check] [-d|--detach]
+                      [-p|--enable-prefix-caching] [-m|--moe-backend <name>] [-l|--linear-backend <name>] [-R|--restart-policy <policy>]
 ```
 
 - `fp8`
@@ -59,14 +59,14 @@ qwen-vllm-launcher <fp8|nvfp4> [--reasoning] [--no-warmup] [--no-smoke-check] [-
 
 ### Arguments
 
-- `--reasoning`  Enable Qwen reasoning parser + auto tool choice
-- `--no-warmup`  Skip startup warmup requests
-- `--no-smoke-check`  Skip post-startup smoke check request
-- `--detach`  Exit after health/warmup/smoke checks, leaving container running in Docker
-- `--enable-prefix-caching`  Alias flag kept for compatibility (prefix caching is enabled by default)
-- `--moe-backend <name>`  Pass-through to vLLM `--moe-backend`
-- `--linear-backend <name>`  Pass-through to vLLM `--linear-backend`
-- `--restart-policy <policy>`  Optional Docker restart policy (`on-failure`, `unless-stopped`, etc.)
+- `-r, --reasoning`  Enable Qwen reasoning parser + auto tool choice
+- `-w, --no-warmup`  Skip startup warmup requests
+- `-s, --no-smoke-check`  Skip post-startup smoke check request
+- `-d, --detach`  Exit after health/warmup/smoke checks, leaving container running in Docker
+- `-p, --enable-prefix-caching`  Alias flag kept for compatibility (prefix caching is enabled by default)
+- `-m, --moe-backend <name>`  Pass-through to vLLM `--moe-backend`
+- `-l, --linear-backend <name>`  Pass-through to vLLM `--linear-backend`
+- `-R, --restart-policy <policy>`  Optional Docker restart policy (`on-failure`, `unless-stopped`, etc.)
 
 ### Detached service mode
 

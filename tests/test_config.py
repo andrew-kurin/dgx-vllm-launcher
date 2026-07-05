@@ -30,6 +30,17 @@ def test_resolve_variant_config_nvfp4_defaults_and_unified_env_override():
     assert cfg.ready_timeout_seconds == 42
 
 
+def test_resolve_variant_config_fp8_respects_unified_timeout():
+    cfg = resolve_variant_config(
+        "fp8",
+        env_getter=lambda key, default: {
+            "VLLM_READY_TIMEOUT": "64",
+        }.get(key, default),
+    )
+
+    assert cfg.ready_timeout_seconds == 64
+
+
 def test_resolve_cache_dir_uses_env_override():
     value = resolve_cache_dir(env_getter=lambda key, default: "/tmp/custom-cache")
     assert value == "/tmp/custom-cache"
@@ -47,19 +58,3 @@ def test_resolve_variant_config_invalid_timeout_raises():
         raise AssertionError("invalid timeout should raise")
 
 
-def test_variant_specific_timeout_envs_are_supported_for_backward_compat():
-    cfg_fp8 = resolve_variant_config(
-        "fp8",
-        env_getter=lambda key, default: {
-            "VLLM_READY_TIMEOUT_FP8": "11",
-        }.get(key, default),
-    )
-    cfg_nvfp4 = resolve_variant_config(
-        "nvfp4",
-        env_getter=lambda key, default: {
-            "VLLM_READY_TIMEOUT_NVFP4": "22",
-        }.get(key, default),
-    )
-
-    assert cfg_fp8.ready_timeout_seconds == 11
-    assert cfg_nvfp4.ready_timeout_seconds == 22

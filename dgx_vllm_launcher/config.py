@@ -12,8 +12,6 @@ DEFAULT_FP8_IMAGE = "vllm/vllm-openai:nightly"
 DEFAULT_NVFP4_IMAGE = "vllm/vllm-openai@sha256:7feb2a09304e3b2d38e224a100316e84fe3205faa7605060609e2c02179cbca6"
 
 DEFAULT_READY_TIMEOUT = 1800
-DEFAULT_FP8_TIMEOUT = DEFAULT_READY_TIMEOUT
-DEFAULT_NVFP4_TIMEOUT = DEFAULT_READY_TIMEOUT
 DEFAULT_VLLM_CACHE_DIR = "~/.cache/vllm"
 
 
@@ -39,11 +37,7 @@ class LaunchConfig:
 
 
 def resolve_variant_config(variant: Variant, env_getter: Callable[[str, str], str] = os.getenv) -> VariantConfig:
-    legacy_timeout_env = "VLLM_READY_TIMEOUT_FP8" if variant == "fp8" else "VLLM_READY_TIMEOUT_NVFP4"
-    timeout = env_getter(
-        "VLLM_READY_TIMEOUT",
-        env_getter(legacy_timeout_env, str(DEFAULT_READY_TIMEOUT)),
-    )
+    timeout = env_getter("VLLM_READY_TIMEOUT", str(DEFAULT_READY_TIMEOUT))
 
     if variant == "fp8":
         model = f"{MODEL_BASE}-FP8"

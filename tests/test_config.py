@@ -1,127 +1,265 @@
 from __future__ import annotations
 
-import os
+from pathlib import Path
 
+import pytest
+
+from dgx_vllm_launcher.cli import LaunchArgs
 from dgx_vllm_launcher.config import (
-    DEFAULT_READY_TIMEOUT,
     DEFAULT_FP8_IMAGE,
-    DEFAULT_NVFP4_IMAGE,
-    DEFAULT_PRELOADED_MODELS_DIR,
     DEFAULT_GEMMA4_NVFP4_IMAGE,
     DEFAULT_ORNITH_NVFP4_IMAGE,
+    DEFAULT_READY_TIMEOUT,
+    HuggingFaceModel,
     VARIANTS,
     VARIANT_PROFILES,
-    resolve_variant_config,
-    resolve_cache_dir,
-    resolve_preloaded_models_root,
 )
+from dgx_vllm_launcher.plan import ConfigurationError, resolve_launch_plan
 
 
-def test_resolve_variant_config_qwen36_fp8_defaults():
-    cfg = resolve_variant_config("qwen36-fp8", env_getter=lambda key, default: default)
-    assert cfg.model == "Qwen/Qwen3.6-35B-A3B-FP8"
-    assert cfg.image == DEFAULT_FP8_IMAGE
-    assert cfg.served_model_name == "qwen36-fp8"
-    assert cfg.ready_timeout_seconds == DEFAULT_READY_TIMEOUT
-
-
-def test_resolve_variant_config_qwen36_nvfp4_defaults_and_unified_env_override():
-    cfg = resolve_variant_config(
-        "qwen36-nvfp4",
-        env_getter=lambda key, default: {
-            "VLLM_READY_TIMEOUT": "42",
-        }.get(key, default),
-    )
-    assert cfg.model == "Qwen/Qwen3.6-35B-A3B-NVFP4"
-    assert cfg.image == DEFAULT_NVFP4_IMAGE
-    assert cfg.served_model_name == "qwen36-nvfp4"
-    assert cfg.ready_timeout_seconds == 42
-
-
-def test_resolve_variant_config_gemma4_defaults():
-    cfg = resolve_variant_config("gemma4-nvfp4", env_getter=lambda key, default: default)
-    assert cfg.model == "nvidia/Gemma-4-26B-A4B-NVFP4"
-    assert cfg.image == DEFAULT_GEMMA4_NVFP4_IMAGE
-    assert cfg.served_model_name == "gemma4-nvfp4"
-    assert cfg.ready_timeout_seconds == DEFAULT_READY_TIMEOUT
-
-
-def test_resolve_variant_config_ornith_defaults():
-    cfg = resolve_variant_config("ornith-nvfp4", env_getter=lambda key, default: default)
-    assert cfg.model == "sakamakismile/Ornith-1.0-35B-NVFP4"
-    assert cfg.image == DEFAULT_ORNITH_NVFP4_IMAGE
-    assert cfg.served_model_name == "ornith-nvfp4"
-    assert cfg.ready_timeout_seconds == DEFAULT_READY_TIMEOUT
-
-
-def test_resolve_variant_config_qwen36_fp8_respects_unified_timeout():
-    cfg = resolve_variant_config(
-        "qwen36-fp8",
-        env_getter=lambda key, default: {
-            "VLLM_READY_TIMEOUT": "64",
-        }.get(key, default),
-    )
-
-    assert cfg.ready_timeout_seconds == 64
-
-
-def test_variant_profiles_are_complete():
+def test_variant_profiles_are_complete_and_use_typed_sources():
     assert set(VARIANTS) == set(VARIANT_PROFILES)
-
-
-def test_variant_profiles_capture_expected_launch_hints():
-    assert VARIANT_PROFILES["qwen36-fp8"].requires_hf_token is True
-    assert VARIANT_PROFILES["qwen36-fp8"].quantization is None
-    assert VARIANT_PROFILES["qwen36-fp8"].runtime_defaults.reasoning_parser == "qwen3"
-    assert VARIANT_PROFILES["qwen36-fp8"].runtime_defaults.tool_call_parser == "qwen3_coder"
-    assert VARIANT_PROFILES["qwen36-fp8"].inject_hf_token is True
-
-    assert VARIANT_PROFILES["qwen36-nvfp4"].quantization == "modelopt"
-    assert VARIANT_PROFILES["qwen36-nvfp4"].mount_local_model is True
-    assert VARIANT_PROFILES["qwen36-nvfp4"].default_moe_backend == "flashinfer_b12x"
-    assert VARIANT_PROFILES["qwen36-nvfp4"].inject_hf_token is False
-    assert VARIANT_PROFILES["qwen36-nvfp4"].model.startswith("Qwen/Qwen3.6")
-
-    assert VARIANT_PROFILES["gemma4-nvfp4"].requires_hf_token is False
-    assert VARIANT_PROFILES["gemma4-nvfp4"].default_moe_backend is None
-    assert VARIANT_PROFILES["gemma4-nvfp4"].runtime_defaults.reasoning_parser == "gemma4"
-    assert VARIANT_PROFILES["gemma4-nvfp4"].runtime_defaults.tool_call_parser == "gemma4"
-    assert "--limit-mm-per-prompt" in VARIANT_PROFILES["gemma4-nvfp4"].runtime_defaults.extra_vllm_args
-    assert VARIANT_PROFILES["gemma4-nvfp4"].inject_hf_token is True
-    assert VARIANT_PROFILES["gemma4-nvfp4"].mount_local_model is True
-
-    assert VARIANT_PROFILES["ornith-nvfp4"].requires_hf_token is False
-    assert VARIANT_PROFILES["ornith-nvfp4"].default_moe_backend is None
-    assert VARIANT_PROFILES["ornith-nvfp4"].inject_hf_token is True
-    assert VARIANT_PROFILES["ornith-nvfp4"].mount_local_model is True
-    assert VARIANT_PROFILES["ornith-nvfp4"].quantization == "modelopt"
-
-
-def test_resolve_preloaded_models_root_default():
-    value = resolve_preloaded_models_root(env_getter=lambda key, default: default)
-    assert value == os.path.expanduser(DEFAULT_PRELOADED_MODELS_DIR)
-
-
-def test_resolve_preloaded_models_root_override():
-    value = resolve_preloaded_models_root(
-        override_root="/tmp/models",
-        env_getter=lambda key, default: default,
+    assert all(
+        isinstance(profile.source, HuggingFaceModel)
+        for profile in VARIANT_PROFILES.values()
     )
-    assert value == "/tmp/models"
 
 
-def test_resolve_cache_dir_uses_env_override():
-    value = resolve_cache_dir(env_getter=lambda key, default: "/tmp/custom-cache")
-    assert value == "/tmp/custom-cache"
+def test_profiles_preserve_latest_model_and_runtime_defaults():
+    fp8 = VARIANT_PROFILES["qwen36-fp8"]
+    qwen_nvfp4 = VARIANT_PROFILES["qwen36-nvfp4"]
+    gemma = VARIANT_PROFILES["gemma4-nvfp4"]
+    ornith = VARIANT_PROFILES["ornith-nvfp4"]
+
+    assert fp8.source.token_policy == "required"
+    assert fp8.runtime_defaults.reasoning_parser == "qwen3"
+    assert qwen_nvfp4.model == "Qwen/Qwen3.6-35B-A3B-NVFP4"
+    assert qwen_nvfp4.default_moe_backend == "flashinfer_b12x"
+    assert qwen_nvfp4.source.preloaded is not None
+    assert gemma.default_moe_backend is None
+    assert gemma.runtime_defaults.reasoning_parser == "gemma4"
+    assert gemma.runtime_defaults.max_num_seqs == 32
+    assert "--limit-mm-per-prompt" in gemma.runtime_defaults.extra_vllm_args
+    assert gemma.source.token_policy == "optional"
+    assert ornith.default_moe_backend is None
+    assert ornith.source.token_policy == "optional"
 
 
-def test_resolve_variant_config_invalid_timeout_raises():
-    try:
-        resolve_variant_config(
-            "qwen36-fp8",
-            env_getter=lambda key, default: "not-an-int" if key == "VLLM_READY_TIMEOUT" else default,
+def test_resolve_fp8_plan_defaults():
+    plan = resolve_launch_plan(LaunchArgs(variant="qwen36-fp8"), {})
+
+    assert plan.model == "Qwen/Qwen3.6-35B-A3B-FP8"
+    assert plan.image == DEFAULT_FP8_IMAGE
+    assert plan.served_model_name == "qwen36-fp8"
+    assert plan.ready_timeout_seconds == DEFAULT_READY_TIMEOUT
+    assert plan.requires_hf_token is True
+    assert plan.inject_hf_token is True
+    assert plan.base_url == "http://127.0.0.1:8000"
+
+
+def test_resolve_remote_variant_models_images_and_token_policies():
+    gemma = resolve_launch_plan(LaunchArgs(variant="gemma4-nvfp4"), {})
+    ornith = resolve_launch_plan(LaunchArgs(variant="ornith-nvfp4"), {})
+
+    assert gemma.model == "nvidia/Gemma-4-26B-A4B-NVFP4"
+    assert gemma.image == DEFAULT_GEMMA4_NVFP4_IMAGE
+    assert ornith.model == "sakamakismile/Ornith-1.0-35B-NVFP4"
+    assert ornith.image == DEFAULT_ORNITH_NVFP4_IMAGE
+    assert gemma.requires_hf_token is False
+    assert gemma.inject_hf_token is True
+    assert ornith.requires_hf_token is False
+    assert ornith.inject_hf_token is True
+
+
+def test_preloaded_model_is_selected_and_mounted_read_only(
+    make_plan,
+    tmp_path: Path,
+):
+    root = tmp_path / "models"
+    model_dir = root / "Qwen3.6-35B-A3B-NVFP4"
+    model_dir.mkdir(parents=True)
+
+    plan = make_plan(
+        use_preloaded_models=True,
+        preloaded_models_dir=str(root),
+    )
+
+    assert plan.model == "/model"
+    assert plan.configured_model == "Qwen/Qwen3.6-35B-A3B-NVFP4"
+    assert plan.uses_preloaded_model is True
+    assert plan.preloaded_model_path == model_dir
+    model_mount = next(
+        mount for mount in plan.mounts if mount.container_path == "/model"
+    )
+    assert model_mount.host_path == model_dir
+    assert model_mount.read_only is True
+
+
+def test_missing_preloaded_model_falls_back_with_warning(make_plan, tmp_path: Path):
+    root = tmp_path / "missing-models"
+
+    plan = make_plan(
+        use_preloaded_models=True,
+        preloaded_models_dir=str(root),
+    )
+
+    assert plan.model == "Qwen/Qwen3.6-35B-A3B-NVFP4"
+    assert plan.uses_preloaded_model is False
+    assert len(plan.warnings) == 1
+    assert "Preloaded model not found" in plan.warnings[0]
+
+
+def test_profile_without_preloaded_candidate_falls_back_with_warning(
+    make_plan,
+    tmp_path: Path,
+):
+    plan = make_plan(
+        "qwen36-fp8",
+        use_preloaded_models=True,
+        preloaded_models_dir=str(tmp_path),
+    )
+
+    assert plan.model == "Qwen/Qwen3.6-35B-A3B-FP8"
+    assert plan.requires_hf_token is True
+    assert "no preloaded checkpoint configured" in plan.warnings[0]
+
+
+def test_preloaded_gemma_does_not_request_optional_hf_token(
+    make_plan,
+    tmp_path: Path,
+):
+    root = tmp_path / "models"
+    (root / "Gemma-4-26B-A4B-NVFP4").mkdir(parents=True)
+
+    plan = make_plan(
+        "gemma4-nvfp4",
+        use_preloaded_models=True,
+        preloaded_models_dir=str(root),
+    )
+
+    assert plan.uses_preloaded_model is True
+    assert plan.inject_hf_token is False
+    assert plan.requires_hf_token is False
+
+
+def test_plan_centralizes_resolved_qwen_arguments(make_plan):
+    plan = make_plan(
+        moe_backend="custom-moe",
+        linear_backend="custom-linear",
+        reasoning=True,
+    )
+
+    assert _argument_value(plan.vllm_args, "--moe-backend") == "custom-moe"
+    assert _argument_value(plan.vllm_args, "--linear-backend") == "custom-linear"
+    assert _argument_value(plan.vllm_args, "--quantization") == "modelopt"
+    assert _argument_value(plan.vllm_args, "--reasoning-parser") == "qwen3"
+    assert _argument_value(plan.vllm_args, "--tool-call-parser") == "qwen3_coder"
+
+
+def test_plan_uses_variant_specific_gemma_arguments(make_plan):
+    plan = make_plan("gemma4-nvfp4", reasoning=True)
+
+    assert "--moe-backend" not in plan.vllm_args
+    assert _argument_value(plan.vllm_args, "--max-num-seqs") == "32"
+    assert _argument_value(plan.vllm_args, "--max-num-batched-tokens") == "16384"
+    assert _argument_value(plan.vllm_args, "--reasoning-parser") == "gemma4"
+    assert _argument_value(plan.vllm_args, "--tool-call-parser") == "gemma4"
+    assert _argument_value(plan.vllm_args, "--chat-template").endswith(
+        "tool_chat_template_gemma4.jinja"
+    )
+    assert _argument_value(plan.vllm_args, "--limit-mm-per-prompt") == (
+        '{"image":4,"video":0}'
+    )
+    assert "--async-scheduling" in plan.vllm_args
+
+
+def test_plan_uses_latest_profile_backend_defaults(make_plan):
+    assert (
+        _argument_value(
+            make_plan("qwen36-nvfp4").vllm_args,
+            "--moe-backend",
         )
-    except RuntimeError:
-        pass
-    else:
-        raise AssertionError("invalid timeout should raise")
+        == "flashinfer_b12x"
+    )
+    assert "--moe-backend" not in make_plan("ornith-nvfp4").vllm_args
+    assert "--moe-backend" not in make_plan("gemma4-nvfp4").vllm_args
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "not-an-int"])
+def test_ready_timeout_must_be_a_positive_integer(make_plan, value: str):
+    with pytest.raises(ConfigurationError, match="VLLM_READY_TIMEOUT"):
+        make_plan(env_overrides={"VLLM_READY_TIMEOUT": value})
+
+
+@pytest.mark.parametrize("value", ["0", "65536", "bad"])
+def test_host_port_is_validated(make_plan, value: str):
+    with pytest.raises(ConfigurationError, match="VLLM_HOST_PORT"):
+        make_plan(env_overrides={"VLLM_HOST_PORT": value})
+
+
+def test_host_port_drives_endpoint_and_docker_plan(make_plan):
+    plan = make_plan(env_overrides={"VLLM_HOST_PORT": "9000"})
+
+    assert plan.host_port == 9000
+    assert plan.base_url == "http://127.0.0.1:9000"
+    assert _argument_value(plan.vllm_args, "--port") == "8000"
+
+
+def test_warmup_count_must_not_be_negative(make_plan):
+    with pytest.raises(ConfigurationError, match="VLLM_WARMUP_REQUESTS"):
+        make_plan(env_overrides={"VLLM_WARMUP_REQUESTS": "-1"})
+
+
+def test_no_warmup_does_not_parse_unused_warmup_environment(make_plan):
+    plan = make_plan(
+        no_warmup=True,
+        env_overrides={"VLLM_WARMUP_REQUESTS": "invalid"},
+    )
+
+    assert plan.warmup_requests == 0
+
+
+@pytest.mark.parametrize(
+    "policy",
+    ["always", "unless-stopped", "on-failure", "on-failure:3", "no"],
+)
+def test_valid_restart_policies_are_resolved(make_plan, policy: str):
+    assert make_plan(restart_policy=policy).restart_policy == policy
+
+
+def test_invalid_restart_policy_is_rejected(make_plan):
+    with pytest.raises(ConfigurationError, match="restart policy"):
+        make_plan(restart_policy="explode-forever")
+
+
+def test_environment_settings_are_collected_in_plan(make_plan, tmp_path: Path):
+    cache = tmp_path / "custom-cache"
+    hf_cache = tmp_path / "custom-hf-cache"
+    artifacts = tmp_path / "custom-artifacts"
+    plan = make_plan(
+        "qwen36-fp8",
+        env_overrides={
+            "VLLM_CACHE_DIR": str(cache),
+            "VLLM_HF_CACHE_DIR": str(hf_cache),
+            "VLLM_ARTIFACT_DIR": str(artifacts),
+            "VLLM_SAFETENSORS_LOAD_STRATEGY": "lazy",
+            "VLLM_MARLIN_USE_ATOMIC_ADD": "0",
+            "VLLM_NVFP4_GEMM_BACKEND": "marlin",
+        },
+    )
+
+    assert artifacts == plan.artifact_dir
+    assert {mount.host_path for mount in plan.mounts} == {cache, hf_cache}
+    assert _argument_value(plan.vllm_args, "--safetensors-load-strategy") == "lazy"
+    assert ("VLLM_MARLIN_USE_ATOMIC_ADD", "0") in plan.container_env
+    assert ("VLLM_NVFP4_GEMM_BACKEND", "marlin") in plan.container_env
+
+
+def test_variant_is_required_to_resolve_launch_plan():
+    with pytest.raises(ConfigurationError, match="variant is required"):
+        resolve_launch_plan(LaunchArgs(variant=None, show_defaults=True), {})
+
+
+def _argument_value(arguments: tuple[str, ...], name: str) -> str:
+    index = arguments.index(name)
+    return arguments[index + 1]

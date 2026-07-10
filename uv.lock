@@ -118,13 +118,6 @@ dependencies = [
     { name = "rich" },
 ]
 
-[package.optional-dependencies]
-dev = [
-    { name = "pyright" },
-    { name = "pytest" },
-    { name = "ruff" },
-]
-
 [package.dev-dependencies]
 dev = [
     { name = "pyright" },
@@ -133,13 +126,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [
-    { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1.400" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3.5" },
-    { name = "rich", specifier = ">=13.7,<14" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.5" },
-]
-provides-extras = ["dev"]
+requires-dist = [{ name = "rich", specifier = ">=13.7,<14" }]
 
 [package.metadata.requires-dev]
 dev = [

@@ -12,7 +12,6 @@ class LaunchArgs:
     reasoning: bool = False
     no_warmup: bool = False
     no_smoke_check: bool = False
-    enable_prefix_caching: bool = False
     detach: bool = False
     moe_backend: str | None = None
     linear_backend: str | None = None
@@ -24,7 +23,7 @@ class LaunchArgs:
 
 def parse_args(argv: list[str] | None = None) -> LaunchArgs:
     parser = argparse.ArgumentParser(
-        description="Unified launcher for qwen/gemma vLLM variants.",
+        description="Unified launcher for Qwen, Gemma, and Ornith vLLM variants.",
         formatter_class=argparse.RawTextHelpFormatter,
     )
     parser.add_argument(
@@ -37,53 +36,67 @@ def parse_args(argv: list[str] | None = None) -> LaunchArgs:
         "-r",
         "--reasoning",
         action="store_true",
-        help="Enable Qwen reasoning parser + tool-choice path",
+        help="Enable the selected model's reasoning and tool-choice path",
     )
-    parser.add_argument("-w", "--no-warmup", action="store_true", help="Skip pre-startup warmup requests")
+    parser.add_argument(
+        "-w",
+        "--no-warmup",
+        action="store_true",
+        help="Skip post-health warmup requests",
+    )
     parser.add_argument(
         "-s",
         "--no-smoke-check",
         action="store_true",
-        help="Skip post-startup smoke check",
+        help="Skip the post-warmup smoke check",
     )
     parser.add_argument(
         "-d",
         "--detach",
         action="store_true",
-        help="Run startup checks then exit, leaving container running",
+        help="Run startup checks then exit, leaving the container running",
     )
     parser.add_argument(
-        "-p",
-        "--enable-prefix-caching",
-        action="store_true",
-        help="Alias/no-op; prefix caching is enabled by default.",
+        "-m",
+        "--moe-backend",
+        type=str,
+        help="Pass through to vLLM --moe-backend",
     )
-    parser.add_argument("-m", "--moe-backend", type=str, help="Pass through to vLLM --moe-backend")
-    parser.add_argument("-l", "--linear-backend", type=str, help="Pass through to vLLM --linear-backend")
+    parser.add_argument(
+        "-l",
+        "--linear-backend",
+        type=str,
+        help="Pass through to vLLM --linear-backend",
+    )
     parser.add_argument(
         "-R",
         "--restart-policy",
         type=str,
-        help="Optional Docker restart policy (for example: on-failure, unless-stopped)",
+        help="Docker restart policy (for example: on-failure, unless-stopped)",
     )
     parser.add_argument(
         "--use-preloaded-models",
         action="store_true",
-        help="Prefer preloaded Hugging Face checkpoints in ~/models (or --preloaded-models-dir) when they exist; otherwise pull from Hub.",
+        help=(
+            "Prefer an available checkpoint under ~/models (or "
+            "--preloaded-models-dir); otherwise use Hugging Face"
+        ),
     )
     parser.add_argument(
         "--preloaded-models-dir",
         type=str,
-        help="Override the default preloaded-models root path (default from VLLM_PRELOADED_MODELS_DIR or ~/models).",
+        help=(
+            "Override the preloaded-model root from VLLM_PRELOADED_MODELS_DIR "
+            "or ~/models"
+        ),
     )
     parser.add_argument(
         "--show-defaults",
         action="store_true",
-        help="Print recommended per-variant default launch settings and exit.",
+        help="Print recommended per-variant launch settings and exit",
     )
 
     ns = parser.parse_args(argv)
-
     if not ns.show_defaults and ns.variant is None:
         parser.error("the following arguments are required: variant")
 
@@ -92,7 +105,6 @@ def parse_args(argv: list[str] | None = None) -> LaunchArgs:
         reasoning=ns.reasoning,
         no_warmup=ns.no_warmup,
         no_smoke_check=ns.no_smoke_check,
-        enable_prefix_caching=ns.enable_prefix_caching,
         detach=ns.detach,
         moe_backend=ns.moe_backend,
         linear_backend=ns.linear_backend,

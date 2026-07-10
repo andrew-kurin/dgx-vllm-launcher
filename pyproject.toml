@@ -11,13 +11,6 @@ dependencies = [
   "rich>=13.7,<14",
 ]
 
-[project.optional-dependencies]
-dev = [
-  "pyright>=1.1.400",
-  "ruff>=0.5",
-  "pytest>=8.3.5",
-]
-
 [project.scripts]
 dgx-vllm-launcher = "dgx_vllm_launcher.orchestrator:main"
 dgxvllm = "dgx_vllm_launcher.orchestrator:main"

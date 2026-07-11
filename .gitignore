@@ -36,6 +36,9 @@ pip-wheel-metadata/
 *~
 .DS_Store
 
+# Machine-specific tooling hooks
+.github/hooks/dcg.json
+
 # Logs
 *.log
 

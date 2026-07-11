@@ -216,16 +216,15 @@ Both NVIDIA NVFP4 profiles use vLLM's `modelopt_fp4` quantizer. Ornith uses the 
 
 Gemma keeps multimodal image input enabled while limiting vLLM multimodal profiling. Its profile uses:
 
+- `--gpu-memory-utilization 0.8`
 - `--max-num-seqs 32`
 - `--max-num-batched-tokens 16384`
-- FP8 KV cache
+- BF16 KV cache, avoiding the checkpoint's uncalibrated FP8 q/prob-scale warnings
 - Gemma 4 reasoning/tool parsers and chat template when `--reasoning` is set
 
-Gemma leaves MoE backend selection on automatic because its `GELU_TANH` activation is not compatible with every specialized backend. If needed, benchmark explicit backends on the target machine:
+On the validated GB10 image, automatic MoE selection uses FlashInfer CUTLASS. It provides the best mixed-workload result: Marlin is about 0.6% faster for single-stream decode but 5–10% slower for long prefill, while vLLM CUTLASS is slower for decode. Keep backend selection automatic unless testing a different image.
 
-```bash
-uv run dvl gemma4-nvfp4 -r -m marlin -l marlin
-```
+The BF16/0.8 profile retains about 19 GiB host-memory headroom at idle and 16 GiB during C16/long-prefill stress, with capacity for roughly 12.7 simultaneous full 128K contexts. Compared with FP8 KV, BF16 costs less than 1% single-stream decode and about 2% at C4, removes the FP8 scale warnings, and was faster in the validated 64K prefill workload. The checkpoint still emits a fused-expert w1/w3 scale warning; runtime flags cannot repair checkpoint scales, so accuracy-sensitive workloads still require evaluation.
 
 Cold Gemma and Ornith starts can spend tens of minutes downloading and loading weights. The one-hour default covers the validated Ornith cold start (~38 minutes); increase it on slower links if needed:
 

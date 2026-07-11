@@ -57,6 +57,7 @@ def test_profiles_preserve_latest_model_and_runtime_defaults():
     assert gemma.default_moe_backend is None
     assert gemma.quantization == "modelopt_fp4"
     assert gemma.runtime_defaults.reasoning_parser == "gemma4"
+    assert gemma.runtime_defaults.gpu_memory_utilization == 0.8
     assert gemma.runtime_defaults.max_num_seqs == 32
     assert "--limit-mm-per-prompt" in gemma.runtime_defaults.extra_vllm_args
     assert gemma.source.token_policy == "optional"
@@ -228,8 +229,10 @@ def test_plan_uses_variant_specific_gemma_arguments(make_plan):
 
     assert "--moe-backend" not in plan.vllm_args
     assert _argument_value(plan.vllm_args, "--quantization") == "modelopt_fp4"
+    assert _argument_value(plan.vllm_args, "--gpu-memory-utilization") == "0.8"
     assert _argument_value(plan.vllm_args, "--max-num-seqs") == "32"
     assert _argument_value(plan.vllm_args, "--max-num-batched-tokens") == "16384"
+    assert _argument_value(plan.vllm_args, "--kv-cache-dtype") == "bfloat16"
     assert _argument_value(plan.vllm_args, "--reasoning-parser") == "gemma4"
     assert _argument_value(plan.vllm_args, "--tool-call-parser") == "gemma4"
     assert _argument_value(plan.vllm_args, "--chat-template").endswith(

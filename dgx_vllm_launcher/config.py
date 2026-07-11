@@ -120,16 +120,17 @@ QWEN_NVFP4_RUNTIME_DEFAULTS = VariantRuntimeDefaults(
 )
 
 GEMMA4_RUNTIME_DEFAULTS = VariantRuntimeDefaults(
-    # Keep MoE automatic: not every specialized backend supports GELU_TANH.
+    # Automatic selection uses FlashInfer CUTLASS on GB10 and outperforms the
+    # other supported backends across mixed decode and long-prefill workloads.
     reasoning_parser="gemma4",
     tool_call_parser="gemma4",
     chat_template="/vllm-workspace/examples/tool_chat_template_gemma4.jinja",
-    gpu_memory_utilization=0.85,
+    gpu_memory_utilization=0.8,
     max_num_seqs=32,
     max_num_batched_tokens=16384,
     extra_vllm_args=(
         "--kv-cache-dtype",
-        "fp8",
+        "bfloat16",
         "--limit-mm-per-prompt",
         '{"image":4,"video":0}',
         "--mm-processor-kwargs",

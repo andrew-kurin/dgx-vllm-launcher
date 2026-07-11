@@ -258,6 +258,7 @@ def resolve_launch_plan(
         ),
         ("TORCHINDUCTOR_CACHE_DIR", "/root/.cache/vllm/torchinductor"),
     ]
+    container_env.extend(runtime_defaults.container_env)
 
     vllm_args = build_vllm_args(
         profile.served_model_name,

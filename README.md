@@ -198,7 +198,7 @@ Qwen FP8 and Ornith use conservative single-Spark scheduling defaults:
 - `--max-num-seqs 4`
 - `--max-num-batched-tokens 8192`
 
-Qwen FP8 uses Triton MoE on GB10 to avoid vLLM's incompatible automatic DeepGEMM selection and enables its two-token `mtp` speculative decoder.
+Qwen FP8 disables unsupported DeepGEMM paths on GB10, uses Triton MoE, and enables its two-token `mtp` speculative decoder.
 
 Qwen NVFP4 follows NVIDIA's DGX Spark recipe while retaining the launcher's 128K context limit:
 

@@ -67,6 +67,7 @@ class LaunchPlan:
 
 
 _RESTART_POLICY = re.compile(r"(?:no|always|unless-stopped|on-failure(?::\d+)?)")
+_TUNED_CONFIG_CONTAINER_PATH = "/vllm-tuned-configs"
 
 
 def _env_value(env: Mapping[str, str], name: str, default: str) -> str:
@@ -204,6 +205,25 @@ def resolve_launch_plan(
     preloaded_root = _resolved_path(preloaded_root_raw)
 
     mounts = [Mount(cache_dir, "/root/.cache/vllm")]
+    tuned_config_dir: Path | None = None
+    if runtime_defaults.tuned_config_subdir is not None:
+        package_root = Path(__file__).resolve().parent
+        tuned_config_dir = (
+            package_root / runtime_defaults.tuned_config_subdir
+        ).resolve()
+        if not tuned_config_dir.is_relative_to(package_root):
+            raise ConfigurationError("profile tuned config directory escapes package")
+        if not tuned_config_dir.is_dir():
+            raise ConfigurationError(
+                f"profile tuned config directory does not exist: {tuned_config_dir}"
+            )
+        mounts.append(
+            Mount(
+                tuned_config_dir,
+                _TUNED_CONFIG_CONTAINER_PATH,
+                read_only=True,
+            )
+        )
     warnings: list[str] = []
     model = profile.model
     uses_preloaded_model = False
@@ -258,6 +278,10 @@ def resolve_launch_plan(
         ),
         ("TORCHINDUCTOR_CACHE_DIR", "/root/.cache/vllm/torchinductor"),
     ]
+    if tuned_config_dir is not None:
+        container_env.append(
+            ("VLLM_TUNED_CONFIG_FOLDER", _TUNED_CONFIG_CONTAINER_PATH)
+        )
     container_env.extend(runtime_defaults.container_env)
 
     vllm_args = build_vllm_args(

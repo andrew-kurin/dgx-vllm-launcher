@@ -45,11 +45,13 @@ def test_profiles_preserve_latest_model_and_runtime_defaults():
     assert fp8.source.token_policy == "optional"
     assert fp8.default_moe_backend == "triton"
     assert fp8.runtime_defaults.container_env == (("VLLM_USE_DEEP_GEMM", "0"),)
+    assert fp8.runtime_defaults.tuned_config_subdir == "tuned_configs/qwen36_fp8"
     assert fp8.runtime_defaults.reasoning_parser == "qwen3"
     assert fp8.runtime_defaults.max_num_seqs == 4
     assert fp8.runtime_defaults.max_num_batched_tokens == 8192
     assert qwen_nvfp4.model == "nvidia/Qwen3.6-35B-A3B-NVFP4"
     assert qwen_nvfp4.default_moe_backend == "marlin"
+    assert qwen_nvfp4.runtime_defaults.tuned_config_subdir is None
     assert qwen_nvfp4.quantization == "modelopt_fp4"
     assert qwen_nvfp4.runtime_defaults.gpu_memory_utilization == 0.4
     assert qwen_nvfp4.runtime_defaults.load_format == "fastsafetensors"
@@ -196,6 +198,12 @@ def test_plan_uses_dgx_spark_qwen_nvfp4_arguments(make_plan):
     )
     assert "--enable-chunked-prefill" in plan.vllm_args
     assert "--async-scheduling" in plan.vllm_args
+    assert not any(
+        name == "VLLM_TUNED_CONFIG_FOLDER" for name, _ in plan.container_env
+    )
+    assert all(
+        mount.container_path != "/vllm-tuned-configs" for mount in plan.mounts
+    )
 
 
 def test_plan_uses_dgx_spark_fp8_arguments(make_plan):
@@ -208,6 +216,21 @@ def test_plan_uses_dgx_spark_fp8_arguments(make_plan):
     assert _argument_value(plan.vllm_args, "--tool-call-parser") == "qwen3_coder"
     assert _argument_value(plan.vllm_args, "--moe-backend") == "triton"
     assert ("VLLM_USE_DEEP_GEMM", "0") in plan.container_env
+    assert (
+        "VLLM_TUNED_CONFIG_FOLDER",
+        "/vllm-tuned-configs",
+    ) in plan.container_env
+    tuned_mount = next(
+        mount
+        for mount in plan.mounts
+        if mount.container_path == "/vllm-tuned-configs"
+    )
+    assert tuned_mount.read_only is True
+    assert (
+        tuned_mount.host_path
+        / "E=256,N=512,device_name=NVIDIA_GB10,dtype=fp8_w8a8,"
+        "block_shape=[128,128].json"
+    ).is_file()
     assert _argument_value(plan.vllm_args, "--speculative-config") == (
         '{"method":"mtp","num_speculative_tokens":2}'
     )
@@ -319,7 +342,9 @@ def test_environment_settings_are_collected_in_plan(make_plan, tmp_path: Path):
     )
 
     assert artifacts == plan.artifact_dir
-    assert {mount.host_path for mount in plan.mounts} == {cache, hf_cache}
+    assert {
+        mount.host_path for mount in plan.mounts if not mount.read_only
+    } == {cache, hf_cache}
     assert _argument_value(plan.vllm_args, "--safetensors-load-strategy") == "prefetch"
     assert ("VLLM_MARLIN_USE_ATOMIC_ADD", "0") in plan.container_env
 

@@ -60,6 +60,7 @@ class VariantRuntimeDefaults:
     max_num_seqs: int = DEFAULT_MAX_NUM_SEQS
     max_num_batched_tokens: int = DEFAULT_MAX_NUM_BATCHED_TOKENS
     load_format: str | None = None
+    tuned_config_subdir: str | None = None
     container_env: tuple[tuple[str, str], ...] = ()
     extra_vllm_args: tuple[str, ...] = ()
 
@@ -94,6 +95,7 @@ QWEN_FP8_RUNTIME_DEFAULTS = VariantRuntimeDefaults(
     moe_backend="triton",
     reasoning_parser="qwen3",
     tool_call_parser="qwen3_coder",
+    tuned_config_subdir="tuned_configs/qwen36_fp8",
     container_env=(("VLLM_USE_DEEP_GEMM", "0"),),
     extra_vllm_args=(
         "--speculative-config",

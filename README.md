@@ -198,7 +198,9 @@ Qwen FP8 and Ornith use conservative single-Spark scheduling defaults:
 - `--max-num-seqs 4`
 - `--max-num-batched-tokens 8192`
 
-Qwen FP8 disables unsupported DeepGEMM paths on GB10, uses Triton MoE, and enables its two-token `mtp` speculative decoder.
+Qwen FP8 disables unsupported DeepGEMM paths on GB10, uses Triton MoE, and enables its two-token `mtp` speculative decoder. It also mounts a TP=1/GB10 Triton MoE configuration tuned against the pinned vLLM image and Triton 3.6. The map uses tuned tiles for decode-sized batches and retains vLLM defaults for prefill-sized batches: a fully tuned map improved isolated kernels but regressed real prefill by 4–8%. After shape warmup, repeated server A/B runs improved C4 decode from 156.6–157.1 to 165.9 aggregate tok/s (about 5.7–5.9%); single-stream, C16, 8K/64K prefill, and concurrent long prefill remained within roughly 1%.
+
+The tuned file is hardware-, shape-, and runtime-specific. Its filename limits automatic selection to `NVIDIA_GB10`, E=256/N=512, FP8 block-128 experts; re-tune and revalidate it when changing the image, Triton version, tensor-parallel size, or checkpoint architecture.
 
 Qwen NVFP4 follows NVIDIA's DGX Spark recipe while retaining the launcher's 128K context limit:
 
@@ -209,6 +211,8 @@ Qwen NVFP4 follows NVIDIA's DGX Spark recipe while retaining the launcher's 128K
 - Marlin MoE, required by the checkpoint's W4A16 NVFP4 experts
 - Three-token MTP speculative decoding with a Triton drafter
 - `fastsafetensors` loading
+
+A separate GB10 tune of the NVFP4 profile's BF16 Triton MTP-drafter MoE kernel was not retained. Although isolated kernels improved 2–8%, the complete server regressed C4 decode and prefill; the target model's Marlin experts were unaffected. The drafter therefore continues to use vLLM's default Triton configuration.
 
 Both NVIDIA NVFP4 profiles use vLLM's `modelopt_fp4` quantizer. Ornith uses the checkpoint's declared `compressed-tensors` quantization format and leaves MoE backend selection on automatic.
 

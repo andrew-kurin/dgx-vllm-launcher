@@ -252,15 +252,26 @@ def test_health_reports_container_exit(make_plan):
     assert result.reason == "container exited before becoming ready"
 
 
-def test_missing_required_token_is_rejected_before_any_docker_action(make_plan):
-    plan = make_plan("qwen36-fp8", detach=True)
-    runtime = FakeRuntime(exists=True)
+def test_public_fp8_model_can_launch_without_hf_token(make_plan):
+    plan = make_plan(
+        "qwen36-fp8",
+        detach=True,
+        no_warmup=True,
+        no_smoke_check=True,
+    )
+    runtime = FakeRuntime()
+    provider = FakeSecretProvider()
 
-    with pytest.raises(LaunchError, match="HF token required"):
-        _launcher(runtime, FakeClient(), FakeReporter()).launch(plan)
+    code = _launcher(
+        runtime,
+        FakeClient(),
+        FakeReporter(),
+        secret_provider=provider,
+    ).launch(plan)
 
-    assert runtime.events == []
-    assert runtime.exists is True
+    assert code == 0
+    assert provider.calls == 1
+    assert runtime.started_hf_token is None
 
 
 def test_optional_token_is_forwarded_for_hosted_variant(make_plan):

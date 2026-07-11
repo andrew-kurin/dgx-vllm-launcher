@@ -25,23 +25,37 @@ def test_variant_profiles_are_complete_and_use_typed_sources():
     )
 
 
+def test_default_images_are_pinned_by_digest():
+    assert all(
+        "@sha256:" in profile.default_image
+        for profile in VARIANT_PROFILES.values()
+    )
+
+
 def test_profiles_preserve_latest_model_and_runtime_defaults():
     fp8 = VARIANT_PROFILES["qwen36-fp8"]
     qwen_nvfp4 = VARIANT_PROFILES["qwen36-nvfp4"]
     gemma = VARIANT_PROFILES["gemma4-nvfp4"]
     ornith = VARIANT_PROFILES["ornith-nvfp4"]
 
-    assert fp8.source.token_policy == "required"
+    assert fp8.source.token_policy == "optional"
     assert fp8.runtime_defaults.reasoning_parser == "qwen3"
-    assert qwen_nvfp4.model == "Qwen/Qwen3.6-35B-A3B-NVFP4"
-    assert qwen_nvfp4.default_moe_backend == "flashinfer_b12x"
+    assert fp8.runtime_defaults.max_num_seqs == 4
+    assert fp8.runtime_defaults.max_num_batched_tokens == 8192
+    assert qwen_nvfp4.model == "nvidia/Qwen3.6-35B-A3B-NVFP4"
+    assert qwen_nvfp4.default_moe_backend == "marlin"
+    assert qwen_nvfp4.quantization == "modelopt_fp4"
+    assert qwen_nvfp4.runtime_defaults.gpu_memory_utilization == 0.4
+    assert qwen_nvfp4.runtime_defaults.load_format == "fastsafetensors"
     assert qwen_nvfp4.source.preloaded is not None
     assert gemma.default_moe_backend is None
+    assert gemma.quantization == "modelopt_fp4"
     assert gemma.runtime_defaults.reasoning_parser == "gemma4"
     assert gemma.runtime_defaults.max_num_seqs == 32
     assert "--limit-mm-per-prompt" in gemma.runtime_defaults.extra_vllm_args
     assert gemma.source.token_policy == "optional"
     assert ornith.default_moe_backend is None
+    assert ornith.quantization == "compressed-tensors"
     assert ornith.source.token_policy == "optional"
 
 
@@ -52,7 +66,7 @@ def test_resolve_fp8_plan_defaults():
     assert plan.image == DEFAULT_FP8_IMAGE
     assert plan.served_model_name == "qwen36-fp8"
     assert plan.ready_timeout_seconds == DEFAULT_READY_TIMEOUT
-    assert plan.requires_hf_token is True
+    assert plan.requires_hf_token is False
     assert plan.inject_hf_token is True
     assert plan.base_url == "http://127.0.0.1:8000"
 
@@ -85,7 +99,7 @@ def test_preloaded_model_is_selected_and_mounted_read_only(
     )
 
     assert plan.model == "/model"
-    assert plan.configured_model == "Qwen/Qwen3.6-35B-A3B-NVFP4"
+    assert plan.configured_model == "nvidia/Qwen3.6-35B-A3B-NVFP4"
     assert plan.uses_preloaded_model is True
     assert plan.preloaded_model_path == model_dir
     model_mount = next(
@@ -103,7 +117,7 @@ def test_missing_preloaded_model_falls_back_with_warning(make_plan, tmp_path: Pa
         preloaded_models_dir=str(root),
     )
 
-    assert plan.model == "Qwen/Qwen3.6-35B-A3B-NVFP4"
+    assert plan.model == "nvidia/Qwen3.6-35B-A3B-NVFP4"
     assert plan.uses_preloaded_model is False
     assert len(plan.warnings) == 1
     assert "Preloaded model not found" in plan.warnings[0]
@@ -120,7 +134,8 @@ def test_profile_without_preloaded_candidate_falls_back_with_warning(
     )
 
     assert plan.model == "Qwen/Qwen3.6-35B-A3B-FP8"
-    assert plan.requires_hf_token is True
+    assert plan.requires_hf_token is False
+    assert plan.inject_hf_token is True
     assert "no preloaded checkpoint configured" in plan.warnings[0]
 
 
@@ -151,15 +166,60 @@ def test_plan_centralizes_resolved_qwen_arguments(make_plan):
 
     assert _argument_value(plan.vllm_args, "--moe-backend") == "custom-moe"
     assert _argument_value(plan.vllm_args, "--linear-backend") == "custom-linear"
-    assert _argument_value(plan.vllm_args, "--quantization") == "modelopt"
+    assert _argument_value(plan.vllm_args, "--quantization") == "modelopt_fp4"
     assert _argument_value(plan.vllm_args, "--reasoning-parser") == "qwen3"
+    assert _argument_value(plan.vllm_args, "--tool-call-parser") == "qwen3_xml"
+
+
+def test_plan_uses_dgx_spark_qwen_nvfp4_arguments(make_plan):
+    plan = make_plan("qwen36-nvfp4", reasoning=True)
+
+    assert _argument_value(plan.vllm_args, "--gpu-memory-utilization") == "0.4"
+    assert _argument_value(plan.vllm_args, "--max-model-len") == "131072"
+    assert _argument_value(plan.vllm_args, "--max-num-seqs") == "4"
+    assert _argument_value(plan.vllm_args, "--max-num-batched-tokens") == "8192"
+    assert _argument_value(plan.vllm_args, "--load-format") == "fastsafetensors"
+    assert "--safetensors-load-strategy" not in plan.vllm_args
+    assert _argument_value(plan.vllm_args, "--kv-cache-dtype") == "fp8"
+    assert _argument_value(plan.vllm_args, "--attention-backend") == "flashinfer"
+    assert _argument_value(plan.vllm_args, "--moe-backend") == "marlin"
+    assert _argument_value(plan.vllm_args, "--tool-call-parser") == "qwen3_xml"
+    assert _argument_value(plan.vllm_args, "--speculative-config") == (
+        '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}'
+    )
+    assert "--enable-chunked-prefill" in plan.vllm_args
+    assert "--async-scheduling" in plan.vllm_args
+
+
+def test_plan_uses_dgx_spark_fp8_arguments(make_plan):
+    plan = make_plan("qwen36-fp8", reasoning=True)
+
+    assert _argument_value(plan.vllm_args, "--gpu-memory-utilization") == "0.7"
+    assert _argument_value(plan.vllm_args, "--max-num-seqs") == "4"
+    assert _argument_value(plan.vllm_args, "--max-num-batched-tokens") == "8192"
+    assert _argument_value(plan.vllm_args, "--safetensors-load-strategy") == "lazy"
     assert _argument_value(plan.vllm_args, "--tool-call-parser") == "qwen3_coder"
+    assert _argument_value(plan.vllm_args, "--speculative-config") == (
+        '{"method":"qwen3_next_mtp","num_speculative_tokens":2}'
+    )
+
+
+def test_plan_uses_compressed_tensors_for_ornith(make_plan):
+    plan = make_plan("ornith-nvfp4", reasoning=True)
+
+    assert _argument_value(plan.vllm_args, "--quantization") == "compressed-tensors"
+    assert _argument_value(plan.vllm_args, "--gpu-memory-utilization") == "0.7"
+    assert _argument_value(plan.vllm_args, "--max-num-seqs") == "4"
+    assert _argument_value(plan.vllm_args, "--max-num-batched-tokens") == "8192"
+    assert _argument_value(plan.vllm_args, "--tool-call-parser") == "qwen3_xml"
+    assert "--moe-backend" not in plan.vllm_args
 
 
 def test_plan_uses_variant_specific_gemma_arguments(make_plan):
     plan = make_plan("gemma4-nvfp4", reasoning=True)
 
     assert "--moe-backend" not in plan.vllm_args
+    assert _argument_value(plan.vllm_args, "--quantization") == "modelopt_fp4"
     assert _argument_value(plan.vllm_args, "--max-num-seqs") == "32"
     assert _argument_value(plan.vllm_args, "--max-num-batched-tokens") == "16384"
     assert _argument_value(plan.vllm_args, "--reasoning-parser") == "gemma4"
@@ -179,7 +239,7 @@ def test_plan_uses_latest_profile_backend_defaults(make_plan):
             make_plan("qwen36-nvfp4").vllm_args,
             "--moe-backend",
         )
-        == "flashinfer_b12x"
+        == "marlin"
     )
     assert "--moe-backend" not in make_plan("ornith-nvfp4").vllm_args
     assert "--moe-backend" not in make_plan("gemma4-nvfp4").vllm_args
@@ -242,17 +302,15 @@ def test_environment_settings_are_collected_in_plan(make_plan, tmp_path: Path):
             "VLLM_CACHE_DIR": str(cache),
             "VLLM_HF_CACHE_DIR": str(hf_cache),
             "VLLM_ARTIFACT_DIR": str(artifacts),
-            "VLLM_SAFETENSORS_LOAD_STRATEGY": "lazy",
+            "VLLM_SAFETENSORS_LOAD_STRATEGY": "prefetch",
             "VLLM_MARLIN_USE_ATOMIC_ADD": "0",
-            "VLLM_NVFP4_GEMM_BACKEND": "marlin",
         },
     )
 
     assert artifacts == plan.artifact_dir
     assert {mount.host_path for mount in plan.mounts} == {cache, hf_cache}
-    assert _argument_value(plan.vllm_args, "--safetensors-load-strategy") == "lazy"
+    assert _argument_value(plan.vllm_args, "--safetensors-load-strategy") == "prefetch"
     assert ("VLLM_MARLIN_USE_ATOMIC_ADD", "0") in plan.container_env
-    assert ("VLLM_NVFP4_GEMM_BACKEND", "marlin") in plan.container_env
 
 
 def test_variant_is_required_to_resolve_launch_plan():

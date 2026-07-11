@@ -36,8 +36,8 @@ def test_default_profiles_include_latest_variant_settings():
     reporter.show_defaults(VARIANT_PROFILES.values())
 
     rendered = output.getvalue()
-    assert "Qwen/Qwen3.6-35B-A3B-NVFP4" in rendered
-    assert "flashinfer_b12x" in rendered
+    assert "nvidia/Qwen3.6-35B-A3B-NVFP4" in rendered
+    assert "marlin" in rendered
     assert "nvidia/Gemma-4-26B-A4B-NVFP4" in rendered
 
 

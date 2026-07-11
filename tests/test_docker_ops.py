@@ -52,7 +52,7 @@ def test_build_start_command_contains_complete_plan_and_management_label(
     assert "9000:8000" in command
     assert f"{MANAGED_LABEL}=true" in command
     assert "--restart" in command and "unless-stopped" in command
-    assert "--moe-backend" in command and "flashinfer_b12x" in command
+    assert "--moe-backend" in command and "marlin" in command
     assert "--linear-backend" in command and "flashinfer" in command
     assert ":/model:ro" in joined
 

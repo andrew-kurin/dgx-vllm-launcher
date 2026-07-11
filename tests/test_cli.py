@@ -30,7 +30,7 @@ def test_parse_args_long_flags():
             "--no-smoke-check",
             "--detach",
             "--moe-backend",
-            "flashinfer_b12x",
+            "triton",
             "--linear-backend",
             "flashinfer",
             "--restart-policy",
@@ -45,7 +45,7 @@ def test_parse_args_long_flags():
     assert args.no_warmup is True
     assert args.no_smoke_check is True
     assert args.detach is True
-    assert args.moe_backend == "flashinfer_b12x"
+    assert args.moe_backend == "triton"
     assert args.linear_backend == "flashinfer"
     assert args.restart_policy == "on-failure:3"
     assert args.use_preloaded_models is True
@@ -61,7 +61,7 @@ def test_parse_args_short_flags():
             "-s",
             "-d",
             "-m",
-            "flashinfer_b12x",
+            "triton",
             "-l",
             "flashinfer",
             "-R",

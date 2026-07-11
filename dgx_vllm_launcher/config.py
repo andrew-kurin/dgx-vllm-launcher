@@ -7,7 +7,7 @@ Variant = Literal["qwen36-fp8", "qwen36-nvfp4", "gemma4-nvfp4", "ornith-nvfp4"]
 TokenPolicy = Literal["none", "optional", "required"]
 
 MODEL_BASE = "Qwen/Qwen3.6-35B-A3B"
-QWEN_NVFP4_HF_MODEL = "Qwen/Qwen3.6-35B-A3B-NVFP4"
+QWEN_NVFP4_HF_MODEL = "nvidia/Qwen3.6-35B-A3B-NVFP4"
 GEMMA4_MODEL = "nvidia/Gemma-4-26B-A4B-NVFP4"
 ORNITH_MODEL = "sakamakismile/Ornith-1.0-35B-NVFP4"
 
@@ -15,10 +15,11 @@ QWEN_LOCAL_NVFP4_PATH = "Qwen3.6-35B-A3B-NVFP4"
 GEMMA4_LOCAL_NVFP4_PATH = "Gemma-4-26B-A4B-NVFP4"
 ORNITH_LOCAL_NVFP4_PATH = "Ornith-1.0-35B-NVFP4"
 
-DEFAULT_FP8_IMAGE = "vllm/vllm-openai:nightly"
-DEFAULT_NVFP4_IMAGE = "vllm/vllm-openai@sha256:7feb2a09304e3b2d38e224a100316e84fe3205faa7605060609e2c02179cbca6"
-DEFAULT_GEMMA4_NVFP4_IMAGE = DEFAULT_NVFP4_IMAGE
-DEFAULT_ORNITH_NVFP4_IMAGE = DEFAULT_NVFP4_IMAGE
+DEFAULT_VLLM_IMAGE = "vllm/vllm-openai@sha256:7feb2a09304e3b2d38e224a100316e84fe3205faa7605060609e2c02179cbca6"
+DEFAULT_FP8_IMAGE = DEFAULT_VLLM_IMAGE
+DEFAULT_NVFP4_IMAGE = DEFAULT_VLLM_IMAGE
+DEFAULT_GEMMA4_NVFP4_IMAGE = DEFAULT_VLLM_IMAGE
+DEFAULT_ORNITH_NVFP4_IMAGE = DEFAULT_VLLM_IMAGE
 
 DEFAULT_READY_TIMEOUT = 1800
 DEFAULT_VLLM_CACHE_DIR = "~/.cache/vllm"
@@ -27,8 +28,10 @@ DEFAULT_ARTIFACT_DIR = "/tmp"
 DEFAULT_PRELOADED_MODELS_DIR = "~/models"
 DEFAULT_HOST_PORT = 8000
 CONTAINER_PORT = 8000
-DEFAULT_MAX_NUM_SEQS = 256
-DEFAULT_MAX_NUM_BATCHED_TOKENS = 65536
+DEFAULT_GPU_MEMORY_UTILIZATION = 0.7
+DEFAULT_MAX_MODEL_LEN = 131072
+DEFAULT_MAX_NUM_SEQS = 4
+DEFAULT_MAX_NUM_BATCHED_TOKENS = 8192
 
 
 @dataclass(frozen=True)
@@ -52,8 +55,11 @@ class VariantRuntimeDefaults:
     reasoning_parser: str | None = None
     tool_call_parser: str | None = None
     chat_template: str | None = None
+    gpu_memory_utilization: float = DEFAULT_GPU_MEMORY_UTILIZATION
+    max_model_len: int = DEFAULT_MAX_MODEL_LEN
     max_num_seqs: int = DEFAULT_MAX_NUM_SEQS
     max_num_batched_tokens: int = DEFAULT_MAX_NUM_BATCHED_TOKENS
+    load_format: str | None = None
     extra_vllm_args: tuple[str, ...] = ()
 
 
@@ -83,22 +89,39 @@ class VariantProfile:
         return self.runtime_defaults.linear_backend
 
 
-QWEN_RUNTIME_DEFAULTS = VariantRuntimeDefaults(
+QWEN_FP8_RUNTIME_DEFAULTS = VariantRuntimeDefaults(
     reasoning_parser="qwen3",
     tool_call_parser="qwen3_coder",
+    extra_vllm_args=(
+        "--speculative-config",
+        '{"method":"qwen3_next_mtp","num_speculative_tokens":2}',
+    ),
 )
 
 QWEN_NVFP4_RUNTIME_DEFAULTS = VariantRuntimeDefaults(
-    moe_backend="flashinfer_b12x",
+    moe_backend="marlin",
     reasoning_parser="qwen3",
-    tool_call_parser="qwen3_coder",
+    tool_call_parser="qwen3_xml",
+    gpu_memory_utilization=0.4,
+    load_format="fastsafetensors",
+    extra_vllm_args=(
+        "--kv-cache-dtype",
+        "fp8",
+        "--attention-backend",
+        "flashinfer",
+        "--enable-chunked-prefill",
+        "--async-scheduling",
+        "--speculative-config",
+        '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}',
+    ),
 )
 
 GEMMA4_RUNTIME_DEFAULTS = VariantRuntimeDefaults(
-    # FlashInfer-B12X does not support GELU_TANH in several vLLM releases.
+    # Keep MoE automatic: not every specialized backend supports GELU_TANH.
     reasoning_parser="gemma4",
     tool_call_parser="gemma4",
     chat_template="/vllm-workspace/examples/tool_chat_template_gemma4.jinja",
+    gpu_memory_utilization=0.85,
     max_num_seqs=32,
     max_num_batched_tokens=16384,
     extra_vllm_args=(
@@ -112,18 +135,23 @@ GEMMA4_RUNTIME_DEFAULTS = VariantRuntimeDefaults(
     ),
 )
 
+ORNITH_RUNTIME_DEFAULTS = VariantRuntimeDefaults(
+    reasoning_parser="qwen3",
+    tool_call_parser="qwen3_xml",
+)
+
 VARIANT_PROFILES: dict[Variant, VariantProfile] = {
     "qwen36-fp8": VariantProfile(
         variant="qwen36-fp8",
         source=HuggingFaceModel(
             f"{MODEL_BASE}-FP8",
-            token_policy="required",
+            token_policy="optional",
         ),
         image_env_var="VLLM_IMAGE_FP8",
         default_image=DEFAULT_FP8_IMAGE,
         served_model_name="qwen36-fp8",
         startup_message="Serving Qwen/Qwen3.6-35B-A3B-FP8 from Hugging Face...",
-        runtime_defaults=QWEN_RUNTIME_DEFAULTS,
+        runtime_defaults=QWEN_FP8_RUNTIME_DEFAULTS,
     ),
     "qwen36-nvfp4": VariantProfile(
         variant="qwen36-nvfp4",
@@ -134,9 +162,9 @@ VARIANT_PROFILES: dict[Variant, VariantProfile] = {
         image_env_var="VLLM_IMAGE_NVFP4",
         default_image=DEFAULT_NVFP4_IMAGE,
         served_model_name="qwen36-nvfp4",
-        startup_message="Serving Qwen3.6 NVFP4 from Hugging Face...",
+        startup_message="Serving nvidia/Qwen3.6-35B-A3B-NVFP4 from Hugging Face...",
         runtime_defaults=QWEN_NVFP4_RUNTIME_DEFAULTS,
-        quantization="modelopt",
+        quantization="modelopt_fp4",
     ),
     "gemma4-nvfp4": VariantProfile(
         variant="gemma4-nvfp4",
@@ -150,7 +178,7 @@ VARIANT_PROFILES: dict[Variant, VariantProfile] = {
         served_model_name="gemma4-nvfp4",
         startup_message="Serving Gemma 4 26B A4B-NVFP4 from Hugging Face...",
         runtime_defaults=GEMMA4_RUNTIME_DEFAULTS,
-        quantization="modelopt",
+        quantization="modelopt_fp4",
     ),
     "ornith-nvfp4": VariantProfile(
         variant="ornith-nvfp4",
@@ -163,8 +191,8 @@ VARIANT_PROFILES: dict[Variant, VariantProfile] = {
         default_image=DEFAULT_ORNITH_NVFP4_IMAGE,
         served_model_name="ornith-nvfp4",
         startup_message="Serving Ornith 1.0 35B NVFP4 from Hugging Face...",
-        runtime_defaults=QWEN_RUNTIME_DEFAULTS,
-        quantization="modelopt",
+        runtime_defaults=ORNITH_RUNTIME_DEFAULTS,
+        quantization="compressed-tensors",
     ),
 }
 

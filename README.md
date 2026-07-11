@@ -7,7 +7,7 @@ A validated Docker launcher for serving supported FP8 and NVFP4 models with vLLM
 | Variant | Default model source | Optional preloaded checkpoint | Default MoE backend |
 | --- | --- | --- | --- |
 | `qwen36-fp8` | `Qwen/Qwen3.6-35B-A3B-FP8` | — | `(none)` |
-| `qwen36-nvfp4` | `Qwen/Qwen3.6-35B-A3B-NVFP4` | `Qwen3.6-35B-A3B-NVFP4` | `flashinfer_b12x` |
+| `qwen36-nvfp4` | `nvidia/Qwen3.6-35B-A3B-NVFP4` | `Qwen3.6-35B-A3B-NVFP4` | `marlin` |
 | `gemma4-nvfp4` | `nvidia/Gemma-4-26B-A4B-NVFP4` | `Gemma-4-26B-A4B-NVFP4` | `(none)` |
 | `ornith-nvfp4` | `sakamakismile/Ornith-1.0-35B-NVFP4` | `Ornith-1.0-35B-NVFP4` | `(none)` |
 
@@ -56,13 +56,13 @@ uv run dvl --show-defaults
 
 ## Authentication
 
-`qwen36-fp8` requires a Hugging Face token:
+All default model repositories are public and ungated. Qwen FP8, Gemma, and Ornith use a Hugging Face token when one is available but can run anonymously. Qwen NVFP4 does not request token injection by default.
+
+An optional token can be supplied for authenticated download rate limits:
 
 ```bash
 HF_TOKEN=... uv run dvl qwen36-fp8 --reasoning
 ```
-
-Gemma and Ornith use a token when one is available but can run anonymously. Qwen NVFP4 does not request token injection by default.
 
 The launcher checks `HF_TOKEN`, `HUGGING_FACE_HUB_TOKEN`, `HF_HOME/token`, `~/.cache/huggingface/token`, and `~/.huggingface/token`. Tokens are passed through the Docker child-process environment and are never embedded in the Docker command line.
 
@@ -168,25 +168,49 @@ docker stop vllm-qwen36-nvfp4
 
 ### Images
 
-- `VLLM_IMAGE_FP8` — default `vllm/vllm-openai:nightly`
+- `VLLM_IMAGE_FP8` — Qwen FP8 image override
 - `VLLM_IMAGE_NVFP4` — Qwen NVFP4 image override
 - `VLLM_IMAGE_GEMMA4_NVFP4` — Gemma NVFP4 image override
 - `VLLM_IMAGE_ORNITH_NVFP4` — Ornith NVFP4 image override
 
-The NVFP4 defaults use the digest pinned in `dgx_vllm_launcher/config.py`.
+All profiles use the immutable vLLM image digest pinned in `dgx_vllm_launcher/config.py`.
 
 ### vLLM and container tuning
 
-- `VLLM_SAFETENSORS_LOAD_STRATEGY` — default `prefetch`
+- `VLLM_SAFETENSORS_LOAD_STRATEGY` — default `lazy`; applies to profiles using vLLM's standard safetensors loader
 - `VLLM_MARLIN_USE_ATOMIC_ADD` — default `1`
 - `VLLM_ENABLE_INDUCTOR_MAX_AUTOTUNE` — default `1`
-- `VLLM_NVFP4_GEMM_BACKEND` — optional container-level NVFP4 GEMM backend
+
+Use `--linear-backend` and `--moe-backend` for explicit kernel selection. Qwen NVFP4 uses `fastsafetensors`, so the standard safetensors strategy does not apply to that profile.
 
 ### Hugging Face
 
 - `HF_TOKEN`
 - `HUGGING_FACE_HUB_TOKEN`
 - `HF_HOME`
+
+## DGX Spark profile notes
+
+Qwen FP8 and Ornith use conservative single-Spark scheduling defaults:
+
+- `--gpu-memory-utilization 0.7`
+- `--max-model-len 131072`
+- `--max-num-seqs 4`
+- `--max-num-batched-tokens 8192`
+
+Qwen FP8 also enables its two-token `qwen3_next_mtp` speculative decoder.
+
+Qwen NVFP4 follows NVIDIA's DGX Spark recipe while retaining the launcher's 128K context limit:
+
+- NVIDIA's `nvidia/Qwen3.6-35B-A3B-NVFP4` checkpoint with vLLM's `modelopt_fp4` quantizer
+- `--gpu-memory-utilization 0.4`
+- `--max-num-seqs 4` and `--max-num-batched-tokens 8192`
+- FP8 KV cache and FlashInfer attention
+- Marlin MoE, required by the checkpoint's W4A16 NVFP4 experts
+- Three-token MTP speculative decoding with a Triton drafter
+- `fastsafetensors` loading
+
+Both NVIDIA NVFP4 profiles use vLLM's `modelopt_fp4` quantizer. Ornith uses the checkpoint's declared `compressed-tensors` quantization format and leaves MoE backend selection on automatic.
 
 ## Gemma 4 notes
 
@@ -197,7 +221,7 @@ Gemma keeps multimodal image input enabled while limiting vLLM multimodal profil
 - FP8 KV cache
 - Gemma 4 reasoning/tool parsers and chat template when `--reasoning` is set
 
-FlashInfer-B12X is intentionally not the default because several vLLM releases do not support Gemma's `GELU_TANH` MoE activation. If needed, benchmark explicit backends on the target machine:
+Gemma leaves MoE backend selection on automatic because its `GELU_TANH` activation is not compatible with every specialized backend. If needed, benchmark explicit backends on the target machine:
 
 ```bash
 uv run dvl gemma4-nvfp4 -r -m marlin -l marlin

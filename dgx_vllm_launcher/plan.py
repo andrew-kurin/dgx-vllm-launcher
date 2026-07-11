@@ -167,6 +167,12 @@ def resolve_launch_plan(
         linear_backend = profile.default_linear_backend
 
     runtime_defaults = profile.runtime_defaults
+    if not 0 < runtime_defaults.gpu_memory_utilization <= 1:
+        raise ConfigurationError(
+            "profile gpu_memory_utilization must be greater than 0 and at most 1"
+        )
+    if runtime_defaults.max_model_len <= 0:
+        raise ConfigurationError("profile max_model_len must be positive")
     if runtime_defaults.max_num_seqs <= 0:
         raise ConfigurationError("profile max_num_seqs must be positive")
     if runtime_defaults.max_num_batched_tokens <= 0:
@@ -239,7 +245,7 @@ def resolve_launch_plan(
     safetensors_strategy = _env_value(
         env,
         "VLLM_SAFETENSORS_LOAD_STRATEGY",
-        "prefetch",
+        "lazy",
     )
     container_env: list[tuple[str, str]] = [
         (
@@ -252,9 +258,6 @@ def resolve_launch_plan(
         ),
         ("TORCHINDUCTOR_CACHE_DIR", "/root/.cache/vllm/torchinductor"),
     ]
-    nvfp4_gemm_backend = env.get("VLLM_NVFP4_GEMM_BACKEND", "").strip()
-    if nvfp4_gemm_backend:
-        container_env.append(("VLLM_NVFP4_GEMM_BACKEND", nvfp4_gemm_backend))
 
     vllm_args = build_vllm_args(
         profile.served_model_name,

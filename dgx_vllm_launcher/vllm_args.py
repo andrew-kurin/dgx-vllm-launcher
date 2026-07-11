@@ -24,23 +24,26 @@ def build_vllm_args(
         "--tensor-parallel-size",
         "1",
         "--gpu-memory-utilization",
-        "0.85",
+        str(runtime_defaults.gpu_memory_utilization),
         "--max-model-len",
-        "131072",
+        str(runtime_defaults.max_model_len),
         "--max-num-seqs",
         str(runtime_defaults.max_num_seqs),
         "--max-num-batched-tokens",
         str(runtime_defaults.max_num_batched_tokens),
         "--enable-prefix-caching",
         "--enable-flashinfer-autotune",
-        "--safetensors-load-strategy",
-        safetensors_load_strategy,
         "--generation-config",
         "vllm",
         "--trust-remote-code",
         "--served-model-name",
         served_model_name,
     ]
+
+    if runtime_defaults.load_format:
+        args.extend(["--load-format", runtime_defaults.load_format])
+    else:
+        args.extend(["--safetensors-load-strategy", safetensors_load_strategy])
 
     if quantization:
         args.extend(["--quantization", quantization])

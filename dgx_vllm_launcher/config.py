@@ -90,11 +90,12 @@ class VariantProfile:
 
 
 QWEN_FP8_RUNTIME_DEFAULTS = VariantRuntimeDefaults(
+    moe_backend="triton",
     reasoning_parser="qwen3",
     tool_call_parser="qwen3_coder",
     extra_vllm_args=(
         "--speculative-config",
-        '{"method":"qwen3_next_mtp","num_speculative_tokens":2}',
+        '{"method":"mtp","num_speculative_tokens":2}',
     ),
 )
 

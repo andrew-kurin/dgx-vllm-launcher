@@ -39,6 +39,7 @@ def test_profiles_preserve_latest_model_and_runtime_defaults():
     ornith = VARIANT_PROFILES["ornith-nvfp4"]
 
     assert fp8.source.token_policy == "optional"
+    assert fp8.default_moe_backend == "triton"
     assert fp8.runtime_defaults.reasoning_parser == "qwen3"
     assert fp8.runtime_defaults.max_num_seqs == 4
     assert fp8.runtime_defaults.max_num_batched_tokens == 8192
@@ -199,8 +200,9 @@ def test_plan_uses_dgx_spark_fp8_arguments(make_plan):
     assert _argument_value(plan.vllm_args, "--max-num-batched-tokens") == "8192"
     assert _argument_value(plan.vllm_args, "--safetensors-load-strategy") == "lazy"
     assert _argument_value(plan.vllm_args, "--tool-call-parser") == "qwen3_coder"
+    assert _argument_value(plan.vllm_args, "--moe-backend") == "triton"
     assert _argument_value(plan.vllm_args, "--speculative-config") == (
-        '{"method":"qwen3_next_mtp","num_speculative_tokens":2}'
+        '{"method":"mtp","num_speculative_tokens":2}'
     )
 
 

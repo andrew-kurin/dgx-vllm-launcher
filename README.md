@@ -6,7 +6,7 @@ A validated Docker launcher for serving supported FP8 and NVFP4 models with vLLM
 
 | Variant | Default model source | Optional preloaded checkpoint | Default MoE backend |
 | --- | --- | --- | --- |
-| `qwen36-fp8` | `Qwen/Qwen3.6-35B-A3B-FP8` | — | `(none)` |
+| `qwen36-fp8` | `Qwen/Qwen3.6-35B-A3B-FP8` | — | `triton` |
 | `qwen36-nvfp4` | `nvidia/Qwen3.6-35B-A3B-NVFP4` | `Qwen3.6-35B-A3B-NVFP4` | `marlin` |
 | `gemma4-nvfp4` | `nvidia/Gemma-4-26B-A4B-NVFP4` | `Gemma-4-26B-A4B-NVFP4` | `(none)` |
 | `ornith-nvfp4` | `sakamakismile/Ornith-1.0-35B-NVFP4` | `Ornith-1.0-35B-NVFP4` | `(none)` |
@@ -198,7 +198,7 @@ Qwen FP8 and Ornith use conservative single-Spark scheduling defaults:
 - `--max-num-seqs 4`
 - `--max-num-batched-tokens 8192`
 
-Qwen FP8 also enables its two-token `qwen3_next_mtp` speculative decoder.
+Qwen FP8 uses Triton MoE on GB10 to avoid vLLM's incompatible automatic DeepGEMM selection and enables its two-token `mtp` speculative decoder.
 
 Qwen NVFP4 follows NVIDIA's DGX Spark recipe while retaining the launcher's 128K context limit:
 

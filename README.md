@@ -158,7 +158,7 @@ docker stop vllm-qwen36-nvfp4
 
 ### General
 
-- `VLLM_READY_TIMEOUT` — positive readiness timeout in seconds; default `1800`
+- `VLLM_READY_TIMEOUT` — positive readiness timeout in seconds; default `3600`
 - `VLLM_WARMUP_REQUESTS` — nonnegative warmup count; default `2`
 - `VLLM_HOST_PORT` — host port mapped to container port 8000; default `8000`
 - `VLLM_CACHE_DIR` — host vLLM/TorchInductor cache; default `~/.cache/vllm`
@@ -227,10 +227,10 @@ Gemma leaves MoE backend selection on automatic because its `GELU_TANH` activati
 uv run dvl gemma4-nvfp4 -r -m marlin -l marlin
 ```
 
-First-run download and compilation can require a longer timeout:
+Cold Gemma and Ornith starts can spend tens of minutes downloading and loading weights. The one-hour default covers the validated Ornith cold start (~38 minutes); increase it on slower links if needed:
 
 ```bash
-VLLM_READY_TIMEOUT=3600 uv run dvl gemma4-nvfp4
+VLLM_READY_TIMEOUT=5400 uv run dvl ornith-nvfp4
 ```
 
 ## Development

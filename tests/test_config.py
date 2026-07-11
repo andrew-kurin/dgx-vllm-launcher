@@ -32,6 +32,10 @@ def test_default_images_are_pinned_by_digest():
     )
 
 
+def test_default_ready_timeout_accommodates_cold_model_downloads():
+    assert DEFAULT_READY_TIMEOUT == 3600
+
+
 def test_profiles_preserve_latest_model_and_runtime_defaults():
     fp8 = VARIANT_PROFILES["qwen36-fp8"]
     qwen_nvfp4 = VARIANT_PROFILES["qwen36-nvfp4"]

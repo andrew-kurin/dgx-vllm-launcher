@@ -9,6 +9,7 @@ Variant = Literal[
     "gemma4-nvfp4",
     "ornith-nvfp4",
     "mistral4-nvfp4",
+    "diffusion-gemma-nvfp4",
 ]
 TokenPolicy = Literal["none", "optional", "required"]
 
@@ -17,11 +18,13 @@ QWEN_NVFP4_HF_MODEL = "nvidia/Qwen3.6-35B-A3B-NVFP4"
 GEMMA4_MODEL = "nvidia/Gemma-4-26B-A4B-NVFP4"
 ORNITH_MODEL = "sakamakismile/Ornith-1.0-35B-NVFP4"
 MISTRAL4_MODEL = "mistralai/Mistral-Small-4-119B-2603-NVFP4"
+DIFFUSION_GEMMA_MODEL = "nvidia/diffusiongemma-26B-A4B-it-NVFP4"
 
 QWEN_LOCAL_NVFP4_PATH = "Qwen3.6-35B-A3B-NVFP4"
 GEMMA4_LOCAL_NVFP4_PATH = "Gemma-4-26B-A4B-NVFP4"
 ORNITH_LOCAL_NVFP4_PATH = "Ornith-1.0-35B-NVFP4"
 MISTRAL4_LOCAL_NVFP4_PATH = "Mistral-Small-4-119B-2603-NVFP4"
+DIFFUSION_GEMMA_LOCAL_NVFP4_PATH = "diffusiongemma-26B-A4B-it-NVFP4"
 
 DEFAULT_VLLM_IMAGE = "vllm/vllm-openai@sha256:7feb2a09304e3b2d38e224a100316e84fe3205faa7605060609e2c02179cbca6"
 DEFAULT_FP8_IMAGE = DEFAULT_VLLM_IMAGE
@@ -29,6 +32,7 @@ DEFAULT_NVFP4_IMAGE = DEFAULT_VLLM_IMAGE
 DEFAULT_GEMMA4_NVFP4_IMAGE = DEFAULT_VLLM_IMAGE
 DEFAULT_ORNITH_NVFP4_IMAGE = DEFAULT_VLLM_IMAGE
 DEFAULT_MISTRAL4_NVFP4_IMAGE = DEFAULT_VLLM_IMAGE
+DEFAULT_DIFFUSION_GEMMA_NVFP4_IMAGE = DEFAULT_VLLM_IMAGE
 
 DEFAULT_READY_TIMEOUT = 10800
 DEFAULT_VLLM_CACHE_DIR = "~/.cache/vllm"
@@ -74,7 +78,10 @@ class VariantRuntimeDefaults:
     load_format: str | None = None
     tuned_config_subdir: str | None = None
     container_env: tuple[tuple[str, str], ...] = ()
+    always_enable_parsers: bool = False
     extra_vllm_args: tuple[str, ...] = ()
+    reasoning_vllm_args: tuple[str, ...] = ()
+    non_reasoning_vllm_args: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -156,6 +163,39 @@ GEMMA4_RUNTIME_DEFAULTS = VariantRuntimeDefaults(
 ORNITH_RUNTIME_DEFAULTS = VariantRuntimeDefaults(
     reasoning_parser="qwen3",
     tool_call_parser="qwen3_xml",
+)
+
+DIFFUSION_GEMMA_RUNTIME_DEFAULTS = VariantRuntimeDefaults(
+    reasoning_parser="gemma4",
+    tool_call_parser="gemma4",
+    gpu_memory_utilization=0.8,
+    max_model_len=262144,
+    max_num_seqs=4,
+    max_num_batched_tokens=8192,
+    load_format="fastsafetensors",
+    container_env=(("VLLM_USE_V2_MODEL_RUNNER", "1"),),
+    always_enable_parsers=True,
+    extra_vllm_args=(
+        "--attention-backend",
+        "TRITON_ATTN",
+        "--diffusion-config",
+        '{"canvas_length":256}',
+        "--override-generation-config",
+        '{"max_new_tokens":null}',
+        "--limit-mm-per-prompt",
+        '{"image":4,"video":1}',
+        "--mm-processor-kwargs",
+        '{"max_soft_tokens":280}',
+        "--enable-chunked-prefill",
+    ),
+    reasoning_vllm_args=(
+        "--default-chat-template-kwargs",
+        '{"enable_thinking":true}',
+    ),
+    non_reasoning_vllm_args=(
+        "--default-chat-template-kwargs",
+        '{"enable_thinking":false}',
+    ),
 )
 
 MISTRAL4_RUNTIME_DEFAULTS = VariantRuntimeDefaults(
@@ -248,6 +288,20 @@ VARIANT_PROFILES: dict[Variant, VariantProfile] = {
         startup_message="Serving Mistral Small 4 119B A6B NVFP4 from Hugging Face...",
         runtime_defaults=MISTRAL4_RUNTIME_DEFAULTS,
         quantization="compressed-tensors",
+    ),
+    "diffusion-gemma-nvfp4": VariantProfile(
+        variant="diffusion-gemma-nvfp4",
+        source=HuggingFaceModel(
+            DIFFUSION_GEMMA_MODEL,
+            token_policy="optional",
+            preloaded=PreloadedModel(DIFFUSION_GEMMA_LOCAL_NVFP4_PATH),
+        ),
+        image_env_var="VLLM_IMAGE_DIFFUSION_GEMMA_NVFP4",
+        default_image=DEFAULT_DIFFUSION_GEMMA_NVFP4_IMAGE,
+        served_model_name="diffusion-gemma-nvfp4",
+        startup_message="Serving DiffusionGemma 26B A4B NVFP4 from Hugging Face...",
+        runtime_defaults=DIFFUSION_GEMMA_RUNTIME_DEFAULTS,
+        quantization="modelopt_fp4",
     ),
 }
 

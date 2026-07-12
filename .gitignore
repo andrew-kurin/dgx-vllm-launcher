@@ -36,8 +36,9 @@ pip-wheel-metadata/
 *~
 .DS_Store
 
-# Machine-specific tooling hooks
+# Machine-specific tooling artifacts
 .github/hooks/dcg.json
+.pi-tavily-temp/
 
 # Logs
 *.log

@@ -11,6 +11,7 @@ A validated Docker launcher for serving supported FP8 and NVFP4 models with vLLM
 | `gemma4-nvfp4` | `nvidia/Gemma-4-26B-A4B-NVFP4` | `Gemma-4-26B-A4B-NVFP4` | `(none)` |
 | `ornith-nvfp4` | `sakamakismile/Ornith-1.0-35B-NVFP4` | `Ornith-1.0-35B-NVFP4` | `(none)` |
 | `mistral4-nvfp4` | `mistralai/Mistral-Small-4-119B-2603-NVFP4` | `Mistral-Small-4-119B-2603-NVFP4` | `(none)` |
+| `diffusion-gemma-nvfp4` | `nvidia/diffusiongemma-26B-A4B-it-NVFP4` | `diffusiongemma-26B-A4B-it-NVFP4` | `(none)` |
 
 The launcher provides:
 
@@ -34,6 +35,7 @@ uv run dvl qwen36-nvfp4
 uv run dvl gemma4-nvfp4
 uv run dvl ornith-nvfp4
 uv run dvl mistral4-nvfp4
+uv run dvl diffusion-gemma-nvfp4
 ```
 
 The full command and shorter entrypoints are equivalent:
@@ -58,7 +60,7 @@ uv run dvl --show-defaults
 
 ## Authentication
 
-All default model repositories are public and ungated. Qwen FP8, Gemma, Ornith, and Mistral use a Hugging Face token when one is available but can run anonymously. Qwen NVFP4 does not request token injection by default.
+All default model repositories are public and ungated. Qwen FP8, Gemma, DiffusionGemma, Ornith, and Mistral use a Hugging Face token when one is available but can run anonymously. Qwen NVFP4 does not request token injection by default.
 
 An optional token can be supplied for authenticated download rate limits:
 
@@ -82,7 +84,7 @@ dvl [variant] [-r|--reasoning] [-w|--no-warmup]
 
 Arguments:
 
-- `-r, --reasoning` — enable the selected profile's reasoning parser and automatic tool choice
+- `-r, --reasoning` — enable the selected profile's reasoning path; for DiffusionGemma this makes thinking the server default
 - `-w, --no-warmup` — skip post-health warmup requests
 - `-s, --no-smoke-check` — skip the final completion smoke check
 - `-d, --detach` — exit only after all enabled startup checks pass
@@ -100,6 +102,7 @@ Reasoning configuration is profile-driven:
 - Qwen and Ornith use the Qwen reasoning/tool parsers.
 - Gemma uses the Gemma 4 parser, tool parser, and vLLM tool chat template.
 - Mistral uses its native tokenizer plus the Mistral reasoning and tool parsers. Clients opt into thinking per request with `reasoning_effort="high"`.
+- DiffusionGemma always loads the Gemma 4 reasoning/tool parsers so channel markers never leak into normal text. Thinking defaults off, or on with `--reasoning`; clients can override it per request with `chat_template_kwargs={"enable_thinking": ...}`.
 
 ## Preloaded checkpoints
 
@@ -110,6 +113,7 @@ uv run dvl qwen36-nvfp4 --use-preloaded-models
 uv run dvl gemma4-nvfp4 --use-preloaded-models
 uv run dvl ornith-nvfp4 --use-preloaded-models
 uv run dvl mistral4-nvfp4 --use-preloaded-models
+uv run dvl diffusion-gemma-nvfp4 --use-preloaded-models
 ```
 
 The default root is `~/models`. Override it with either:
@@ -119,7 +123,7 @@ VLLM_PRELOADED_MODELS_DIR=/opt/models uv run dvl gemma4-nvfp4 --use-preloaded-mo
 uv run dvl gemma4-nvfp4 --use-preloaded-models --preloaded-models-dir /opt/models
 ```
 
-When the expected directory exists, it is mounted read-only at `/model`. If it is missing, the launcher emits a warning and uses the configured Hugging Face model ID. A selected preloaded Gemma, Ornith, or Mistral model does not receive an optional HF token.
+When the expected directory exists, it is mounted read-only at `/model`. If it is missing, the launcher emits a warning and uses the configured Hugging Face model ID. A selected preloaded Gemma, DiffusionGemma, Ornith, or Mistral model does not receive an optional HF token.
 
 ## Startup and cleanup behavior
 
@@ -177,6 +181,7 @@ docker stop vllm-qwen36-nvfp4
 - `VLLM_IMAGE_GEMMA4_NVFP4` — Gemma NVFP4 image override
 - `VLLM_IMAGE_ORNITH_NVFP4` — Ornith NVFP4 image override
 - `VLLM_IMAGE_MISTRAL4_NVFP4` — Mistral Small 4 NVFP4 image override
+- `VLLM_IMAGE_DIFFUSION_GEMMA_NVFP4` — DiffusionGemma NVFP4 image override
 
 All profiles use the immutable vLLM image digest pinned in `dgx_vllm_launcher/config.py`.
 
@@ -186,7 +191,7 @@ All profiles use the immutable vLLM image digest pinned in `dgx_vllm_launcher/co
 - `VLLM_MARLIN_USE_ATOMIC_ADD` — default `1`
 - `VLLM_ENABLE_INDUCTOR_MAX_AUTOTUNE` — default `1`
 
-Use `--linear-backend` and `--moe-backend` for explicit kernel selection. Qwen NVFP4 uses `fastsafetensors`, so the standard safetensors strategy does not apply to that profile.
+Use `--linear-backend` and `--moe-backend` for explicit kernel selection. Qwen NVFP4 and DiffusionGemma use `fastsafetensors`, so the standard safetensors strategy does not apply to those profiles.
 
 ### Hugging Face
 
@@ -238,6 +243,34 @@ The fixed KV budget and `--skip-mm-profiling` avoid a roughly 22-minute syntheti
 On the validated GB10, automatic FlashInfer CUTLASS delivered about 31.1 tok/s single-stream decode, 256.7 aggregate tok/s at concurrency 64, and 361.5 tok/s at concurrency 128. The experimental `flashinfer_b12x` backend was slightly slower at low concurrency and substantially slower at concurrency 16–32, so it is not forced. Mistral's EAGLE draft is also not enabled: the only MLA decode backend supported on SM121 in this image is Triton MLA, whose single-query path does not support speculative decoding.
 
 Use `--reasoning` to install the server-side parser, then send `reasoning_effort="high"` (temperature `0.7` is recommended by Mistral) on requests that should reason. Tool calls and image input use the normal OpenAI-compatible chat endpoint.
+
+## DiffusionGemma notes
+
+`diffusion-gemma-nvfp4` serves NVIDIA's 18.9 GB ModelOpt checkpoint on one DGX Spark. DiffusionGemma has 25.2B total and 3.8B active parameters, but unlike an autoregressive model it repeatedly denoises a 256-token canvas and commits a completed block. The profile uses:
+
+- Model Runner V2, enabled only inside this profile
+- `modelopt_fp4` quantization and `fastsafetensors` loading
+- Triton attention for mixed causal/bidirectional attention
+- Automatic FlashInfer CUTLASS NVFP4 MoE selection on GB10
+- A 256K context limit, four sequences, and 8K batched tokens
+- Prefix caching, chunked prefill, up to four images, and one video per request
+- Gemma 4 reasoning and tool parsers in both modes
+- Thinking off by default and on by default with `--reasoning`
+
+Concurrency is deliberately capped at four. Diffusion state scales with `max_num_seqs × canvas_length × vocabulary_size`; raising it can cause an OOM even though the model and KV cache otherwise have substantial headroom. Do not compare its streaming TPOT directly with an autoregressive model: a client may receive no text while a canvas is denoised and then receive many tokens together.
+
+On the validated GB10, loading occupied 18.22 GiB. At `--gpu-memory-utilization 0.8`, vLLM allocated 59.3 GiB for about 4.60M FP8 KV-cache tokens and left about 29 GiB of host memory available. The checkpoint selects FP8 KV automatically; vLLM reports unit fallback scales, so accuracy-sensitive deployments should retain the autoregressive Gemma 4 profile as a comparison baseline.
+
+Validation covered non-thinking text, parsed reasoning, a complete tool-call round trip, image and video data URLs, four concurrent image requests, and a 240,051-token retrieval prompt. The long prompt returned the exact key but required 470 seconds of prefill. Exact-length raw-completion tests were highly prompt dependent: C1 averaged approximately 54–63 tok/s and C4 approximately 76–90 aggregate tok/s for 256–1024 requested tokens. Short real chat requests completed in 0.4–2.1 seconds, illustrating why one fixed diffusion tok/s number is misleading.
+
+Trade-offs:
+
+- The first visible block has higher latency and streaming is bursty.
+- Forced long output can take the full 48 denoising steps per canvas and be slower than favorable benchmark prompts.
+- Overall reasoning, coding, vision, and retrieval quality is lower than autoregressive Gemma 4 on Google's published evaluations.
+- Tool calls work best with thinking enabled.
+- Even a two-token launcher warmup evaluates a full canvas internally, so startup checks are heavier than for other profiles.
+- The checkpoint is Apache 2.0 but remains subject to Gemma's terms and prohibited-use policy.
 
 ## Gemma 4 notes
 

@@ -6,6 +6,7 @@ import pytest
 
 from dgx_vllm_launcher.cli import LaunchArgs
 from dgx_vllm_launcher.config import (
+    DEFAULT_DIFFUSION_GEMMA_NVFP4_IMAGE,
     DEFAULT_FP8_IMAGE,
     DEFAULT_GEMMA4_NVFP4_IMAGE,
     DEFAULT_MISTRAL4_NVFP4_IMAGE,
@@ -43,6 +44,7 @@ def test_profiles_preserve_latest_model_and_runtime_defaults():
     gemma = VARIANT_PROFILES["gemma4-nvfp4"]
     ornith = VARIANT_PROFILES["ornith-nvfp4"]
     mistral = VARIANT_PROFILES["mistral4-nvfp4"]
+    diffusion_gemma = VARIANT_PROFILES["diffusion-gemma-nvfp4"]
 
     assert fp8.source.token_policy == "optional"
     assert fp8.default_moe_backend == "triton"
@@ -78,6 +80,18 @@ def test_profiles_preserve_latest_model_and_runtime_defaults():
         mistral.source.preloaded.relative_path
         == "Mistral-Small-4-119B-2603-NVFP4"
     )
+    assert (
+        diffusion_gemma.model == "nvidia/diffusiongemma-26B-A4B-it-NVFP4"
+    )
+    assert diffusion_gemma.default_moe_backend is None
+    assert diffusion_gemma.quantization == "modelopt_fp4"
+    assert diffusion_gemma.runtime_defaults.always_enable_parsers is True
+    assert diffusion_gemma.source.token_policy == "optional"
+    assert diffusion_gemma.source.preloaded is not None
+    assert (
+        diffusion_gemma.source.preloaded.relative_path
+        == "diffusiongemma-26B-A4B-it-NVFP4"
+    )
 
 
 def test_resolve_fp8_plan_defaults():
@@ -96,6 +110,9 @@ def test_resolve_remote_variant_models_images_and_token_policies():
     gemma = resolve_launch_plan(LaunchArgs(variant="gemma4-nvfp4"), {})
     ornith = resolve_launch_plan(LaunchArgs(variant="ornith-nvfp4"), {})
     mistral = resolve_launch_plan(LaunchArgs(variant="mistral4-nvfp4"), {})
+    diffusion_gemma = resolve_launch_plan(
+        LaunchArgs(variant="diffusion-gemma-nvfp4"), {}
+    )
 
     assert gemma.model == "nvidia/Gemma-4-26B-A4B-NVFP4"
     assert gemma.image == DEFAULT_GEMMA4_NVFP4_IMAGE
@@ -103,12 +120,18 @@ def test_resolve_remote_variant_models_images_and_token_policies():
     assert ornith.image == DEFAULT_ORNITH_NVFP4_IMAGE
     assert mistral.model == "mistralai/Mistral-Small-4-119B-2603-NVFP4"
     assert mistral.image == DEFAULT_MISTRAL4_NVFP4_IMAGE
+    assert (
+        diffusion_gemma.model == "nvidia/diffusiongemma-26B-A4B-it-NVFP4"
+    )
+    assert diffusion_gemma.image == DEFAULT_DIFFUSION_GEMMA_NVFP4_IMAGE
     assert gemma.requires_hf_token is False
     assert gemma.inject_hf_token is True
     assert ornith.requires_hf_token is False
     assert ornith.inject_hf_token is True
     assert mistral.requires_hf_token is False
     assert mistral.inject_hf_token is True
+    assert diffusion_gemma.requires_hf_token is False
+    assert diffusion_gemma.inject_hf_token is True
 
 
 def test_preloaded_model_is_selected_and_mounted_read_only(
@@ -279,6 +302,64 @@ def test_plan_uses_single_spark_mistral4_arguments(make_plan):
     assert "--skip-mm-profiling" in plan.vllm_args
     assert "--enable-chunked-prefill" in plan.vllm_args
     assert "--moe-backend" not in plan.vllm_args
+
+
+def test_plan_uses_single_spark_diffusion_gemma_arguments(make_plan):
+    plan = make_plan("diffusion-gemma-nvfp4")
+
+    assert plan.model == "nvidia/diffusiongemma-26B-A4B-it-NVFP4"
+    assert _argument_value(plan.vllm_args, "--quantization") == "modelopt_fp4"
+    assert _argument_value(plan.vllm_args, "--gpu-memory-utilization") == "0.8"
+    assert _argument_value(plan.vllm_args, "--max-model-len") == "262144"
+    assert _argument_value(plan.vllm_args, "--max-num-seqs") == "4"
+    assert _argument_value(plan.vllm_args, "--max-num-batched-tokens") == "8192"
+    assert _argument_value(plan.vllm_args, "--load-format") == "fastsafetensors"
+    assert _argument_value(plan.vllm_args, "--attention-backend") == "TRITON_ATTN"
+    assert _argument_value(plan.vllm_args, "--diffusion-config") == (
+        '{"canvas_length":256}'
+    )
+    assert _argument_value(plan.vllm_args, "--override-generation-config") == (
+        '{"max_new_tokens":null}'
+    )
+    assert _argument_value(plan.vllm_args, "--reasoning-parser") == "gemma4"
+    assert _argument_value(plan.vllm_args, "--tool-call-parser") == "gemma4"
+    assert _argument_value(plan.vllm_args, "--default-chat-template-kwargs") == (
+        '{"enable_thinking":false}'
+    )
+    assert _argument_value(plan.vllm_args, "--limit-mm-per-prompt") == (
+        '{"image":4,"video":1}'
+    )
+    assert _argument_value(plan.vllm_args, "--mm-processor-kwargs") == (
+        '{"max_soft_tokens":280}'
+    )
+    assert "--enable-auto-tool-choice" in plan.vllm_args
+    assert "--enable-chunked-prefill" in plan.vllm_args
+    assert "--moe-backend" not in plan.vllm_args
+    assert ("VLLM_USE_V2_MODEL_RUNNER", "1") in plan.container_env
+
+
+def test_diffusion_gemma_reasoning_flag_enables_thinking_by_default(make_plan):
+    plan = make_plan("diffusion-gemma-nvfp4", reasoning=True)
+
+    assert _argument_value(plan.vllm_args, "--default-chat-template-kwargs") == (
+        '{"enable_thinking":true}'
+    )
+    assert plan.vllm_args.count("--reasoning-parser") == 1
+    assert plan.vllm_args.count("--tool-call-parser") == 1
+
+
+def test_diffusion_parser_defaults_do_not_change_other_profiles(make_plan):
+    for variant in (
+        "qwen36-fp8",
+        "qwen36-nvfp4",
+        "gemma4-nvfp4",
+        "ornith-nvfp4",
+        "mistral4-nvfp4",
+    ):
+        args = make_plan(variant).vllm_args
+        assert "--reasoning-parser" not in args
+        assert "--tool-call-parser" not in args
+        assert "--default-chat-template-kwargs" not in args
 
 
 def test_plan_uses_compressed_tensors_for_ornith(make_plan):

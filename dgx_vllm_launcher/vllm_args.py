@@ -52,7 +52,7 @@ def build_vllm_args(
     if linear_backend:
         args.extend(["--linear-backend", linear_backend])
 
-    if reasoning:
+    if reasoning or runtime_defaults.always_enable_parsers:
         if (
             not runtime_defaults.reasoning_parser
             or not runtime_defaults.tool_call_parser
@@ -73,4 +73,9 @@ def build_vllm_args(
             args.extend(["--chat-template", runtime_defaults.chat_template])
 
     args.extend(runtime_defaults.extra_vllm_args)
+    args.extend(
+        runtime_defaults.reasoning_vllm_args
+        if reasoning
+        else runtime_defaults.non_reasoning_vllm_args
+    )
     return tuple(args)

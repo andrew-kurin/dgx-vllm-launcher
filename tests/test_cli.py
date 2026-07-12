@@ -83,6 +83,13 @@ def test_parse_args_accepts_mistral4_nvfp4_variant():
     assert args.reasoning is True
 
 
+def test_parse_args_accepts_diffusion_gemma_nvfp4_variant():
+    args = cli.parse_args(["diffusion-gemma-nvfp4", "--reasoning"])
+
+    assert args.variant == "diffusion-gemma-nvfp4"
+    assert args.reasoning is True
+
+
 def test_parse_args_show_defaults_without_variant():
     args = cli.parse_args(["--show-defaults"])
 

@@ -76,6 +76,13 @@ def test_parse_args_short_flags():
     assert args.detach is True
 
 
+def test_parse_args_accepts_mistral4_nvfp4_variant():
+    args = cli.parse_args(["mistral4-nvfp4", "--reasoning"])
+
+    assert args.variant == "mistral4-nvfp4"
+    assert args.reasoning is True
+
+
 def test_parse_args_show_defaults_without_variant():
     args = cli.parse_args(["--show-defaults"])
 

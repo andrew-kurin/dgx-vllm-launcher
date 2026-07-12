@@ -23,7 +23,9 @@ class LaunchArgs:
 
 def parse_args(argv: list[str] | None = None) -> LaunchArgs:
     parser = argparse.ArgumentParser(
-        description="Unified launcher for Qwen, Gemma, and Ornith vLLM variants.",
+        description=(
+            "Unified launcher for Qwen, Gemma, Ornith, and Mistral vLLM variants."
+        ),
         formatter_class=argparse.RawTextHelpFormatter,
     )
     parser.add_argument(

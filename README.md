@@ -10,6 +10,7 @@ A validated Docker launcher for serving supported FP8 and NVFP4 models with vLLM
 | `qwen36-nvfp4` | `nvidia/Qwen3.6-35B-A3B-NVFP4` | `Qwen3.6-35B-A3B-NVFP4` | `marlin` |
 | `gemma4-nvfp4` | `nvidia/Gemma-4-26B-A4B-NVFP4` | `Gemma-4-26B-A4B-NVFP4` | `(none)` |
 | `ornith-nvfp4` | `sakamakismile/Ornith-1.0-35B-NVFP4` | `Ornith-1.0-35B-NVFP4` | `(none)` |
+| `mistral4-nvfp4` | `mistralai/Mistral-Small-4-119B-2603-NVFP4` | `Mistral-Small-4-119B-2603-NVFP4` | `(none)` |
 
 The launcher provides:
 
@@ -32,6 +33,7 @@ uv run dvl qwen36-fp8
 uv run dvl qwen36-nvfp4
 uv run dvl gemma4-nvfp4
 uv run dvl ornith-nvfp4
+uv run dvl mistral4-nvfp4
 ```
 
 The full command and shorter entrypoints are equivalent:
@@ -56,7 +58,7 @@ uv run dvl --show-defaults
 
 ## Authentication
 
-All default model repositories are public and ungated. Qwen FP8, Gemma, and Ornith use a Hugging Face token when one is available but can run anonymously. Qwen NVFP4 does not request token injection by default.
+All default model repositories are public and ungated. Qwen FP8, Gemma, Ornith, and Mistral use a Hugging Face token when one is available but can run anonymously. Qwen NVFP4 does not request token injection by default.
 
 An optional token can be supplied for authenticated download rate limits:
 
@@ -97,6 +99,7 @@ Reasoning configuration is profile-driven:
 
 - Qwen and Ornith use the Qwen reasoning/tool parsers.
 - Gemma uses the Gemma 4 parser, tool parser, and vLLM tool chat template.
+- Mistral uses its native tokenizer plus the Mistral reasoning and tool parsers. Clients opt into thinking per request with `reasoning_effort="high"`.
 
 ## Preloaded checkpoints
 
@@ -106,6 +109,7 @@ Hosted models remain the default. To prefer a local checkpoint:
 uv run dvl qwen36-nvfp4 --use-preloaded-models
 uv run dvl gemma4-nvfp4 --use-preloaded-models
 uv run dvl ornith-nvfp4 --use-preloaded-models
+uv run dvl mistral4-nvfp4 --use-preloaded-models
 ```
 
 The default root is `~/models`. Override it with either:
@@ -115,7 +119,7 @@ VLLM_PRELOADED_MODELS_DIR=/opt/models uv run dvl gemma4-nvfp4 --use-preloaded-mo
 uv run dvl gemma4-nvfp4 --use-preloaded-models --preloaded-models-dir /opt/models
 ```
 
-When the expected directory exists, it is mounted read-only at `/model`. If it is missing, the launcher emits a warning and uses the configured Hugging Face model ID. A selected preloaded Gemma or Ornith model does not receive an optional HF token.
+When the expected directory exists, it is mounted read-only at `/model`. If it is missing, the launcher emits a warning and uses the configured Hugging Face model ID. A selected preloaded Gemma, Ornith, or Mistral model does not receive an optional HF token.
 
 ## Startup and cleanup behavior
 
@@ -158,7 +162,7 @@ docker stop vllm-qwen36-nvfp4
 
 ### General
 
-- `VLLM_READY_TIMEOUT` — positive readiness timeout in seconds; default `3600`
+- `VLLM_READY_TIMEOUT` — positive readiness timeout in seconds; default `10800` (3 hours)
 - `VLLM_WARMUP_REQUESTS` — nonnegative warmup count; default `2`
 - `VLLM_HOST_PORT` — host port mapped to container port 8000; default `8000`
 - `VLLM_CACHE_DIR` — host vLLM/TorchInductor cache; default `~/.cache/vllm`
@@ -172,6 +176,7 @@ docker stop vllm-qwen36-nvfp4
 - `VLLM_IMAGE_NVFP4` — Qwen NVFP4 image override
 - `VLLM_IMAGE_GEMMA4_NVFP4` — Gemma NVFP4 image override
 - `VLLM_IMAGE_ORNITH_NVFP4` — Ornith NVFP4 image override
+- `VLLM_IMAGE_MISTRAL4_NVFP4` — Mistral Small 4 NVFP4 image override
 
 All profiles use the immutable vLLM image digest pinned in `dgx_vllm_launcher/config.py`.
 
@@ -214,7 +219,25 @@ Qwen NVFP4 follows NVIDIA's DGX Spark recipe while retaining the launcher's 128K
 
 A separate GB10 tune of the NVFP4 profile's BF16 Triton MTP-drafter MoE kernel was not retained. Although isolated kernels improved 2–8%, the complete server regressed C4 decode and prefill; the target model's Marlin experts were unaffected. The drafter therefore continues to use vLLM's default Triton configuration.
 
-Both NVIDIA NVFP4 profiles use vLLM's `modelopt_fp4` quantizer. Ornith uses the checkpoint's declared `compressed-tensors` quantization format and leaves MoE backend selection on automatic.
+Both NVIDIA NVFP4 profiles use vLLM's `modelopt_fp4` quantizer. Ornith and Mistral use their checkpoints' declared `compressed-tensors` quantization format and leave MoE backend selection on automatic.
+
+## Mistral Small 4 notes
+
+`mistral4-nvfp4` is tuned for one 128 GB DGX Spark rather than the model card's two-GPU recipe. The 119B MoE checkpoint activates about 6.5B parameters per token and occupies 66.1 GiB after loading. Its profile uses:
+
+- Native Mistral config, tokenizer, and consolidated-safetensors loading
+- `compressed-tensors` NVFP4 quantization
+- Triton MLA attention, required on GB10/SM121 by the pinned vLLM image
+- Automatic FlashInfer CUTLASS linear and MoE kernels
+- A 128K context limit, 128 sequences, and 16K batched tokens
+- A measured 14 GiB KV cache, providing about 652K cache tokens or 4.98 full 128K contexts
+- Chunked prefill, prefix caching, four images per prompt, and automatic asynchronous scheduling
+
+The fixed KV budget and `--skip-mm-profiling` avoid a roughly 22-minute synthetic multimodal profile at 128 sequences while retaining measured memory headroom. Validation included eight concurrent prompts with four 1024×1024 images each and a 120,015-token prompt; both completed without an OOM. The pinned image contains `mistral_common 1.11.5`, satisfying the checkpoint's `>=1.11.0` requirement.
+
+On the validated GB10, automatic FlashInfer CUTLASS delivered about 31.1 tok/s single-stream decode, 256.7 aggregate tok/s at concurrency 64, and 361.5 tok/s at concurrency 128. The experimental `flashinfer_b12x` backend was slightly slower at low concurrency and substantially slower at concurrency 16–32, so it is not forced. Mistral's EAGLE draft is also not enabled: the only MLA decode backend supported on SM121 in this image is Triton MLA, whose single-query path does not support speculative decoding.
+
+Use `--reasoning` to install the server-side parser, then send `reasoning_effort="high"` (temperature `0.7` is recommended by Mistral) on requests that should reason. Tool calls and image input use the normal OpenAI-compatible chat endpoint.
 
 ## Gemma 4 notes
 
@@ -230,10 +253,10 @@ On the validated GB10 image, automatic MoE selection uses FlashInfer CUTLASS. It
 
 The BF16/0.8 profile retains about 19 GiB host-memory headroom at idle and 16 GiB during C16/long-prefill stress, with capacity for roughly 12.7 simultaneous full 128K contexts. Compared with FP8 KV, BF16 costs less than 1% single-stream decode and about 2% at C4, removes the FP8 scale warnings, and was faster in the validated 64K prefill workload. The checkpoint still emits a fused-expert w1/w3 scale warning; runtime flags cannot repair checkpoint scales, so accuracy-sensitive workloads still require evaluation.
 
-Cold Gemma and Ornith starts can spend tens of minutes downloading and loading weights. The one-hour default covers the validated Ornith cold start (~38 minutes); increase it on slower links if needed:
+Cold starts can spend tens of minutes downloading and loading weights. The validated Mistral download alone took about 100 minutes on the test link, so the default readiness deadline is three hours. Increase it further on slower links if needed:
 
 ```bash
-VLLM_READY_TIMEOUT=5400 uv run dvl ornith-nvfp4
+VLLM_READY_TIMEOUT=14400 uv run dvl mistral4-nvfp4
 ```
 
 ## Development

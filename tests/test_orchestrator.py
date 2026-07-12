@@ -494,6 +494,7 @@ def test_orchestrator_show_defaults_does_not_compose_runtime():
         "qwen36-nvfp4",
         "gemma4-nvfp4",
         "ornith-nvfp4",
+        "mistral4-nvfp4",
     }
 
 

@@ -8,6 +8,7 @@ from dgx_vllm_launcher.cli import LaunchArgs
 from dgx_vllm_launcher.config import (
     DEFAULT_FP8_IMAGE,
     DEFAULT_GEMMA4_NVFP4_IMAGE,
+    DEFAULT_MISTRAL4_NVFP4_IMAGE,
     DEFAULT_ORNITH_NVFP4_IMAGE,
     DEFAULT_READY_TIMEOUT,
     HuggingFaceModel,
@@ -32,8 +33,8 @@ def test_default_images_are_pinned_by_digest():
     )
 
 
-def test_default_ready_timeout_accommodates_cold_model_downloads():
-    assert DEFAULT_READY_TIMEOUT == 3600
+def test_default_ready_timeout_accommodates_cold_mistral_downloads():
+    assert DEFAULT_READY_TIMEOUT == 10800
 
 
 def test_profiles_preserve_latest_model_and_runtime_defaults():
@@ -41,6 +42,7 @@ def test_profiles_preserve_latest_model_and_runtime_defaults():
     qwen_nvfp4 = VARIANT_PROFILES["qwen36-nvfp4"]
     gemma = VARIANT_PROFILES["gemma4-nvfp4"]
     ornith = VARIANT_PROFILES["ornith-nvfp4"]
+    mistral = VARIANT_PROFILES["mistral4-nvfp4"]
 
     assert fp8.source.token_policy == "optional"
     assert fp8.default_moe_backend == "triton"
@@ -66,6 +68,16 @@ def test_profiles_preserve_latest_model_and_runtime_defaults():
     assert ornith.default_moe_backend is None
     assert ornith.quantization == "compressed-tensors"
     assert ornith.source.token_policy == "optional"
+    assert mistral.model == "mistralai/Mistral-Small-4-119B-2603-NVFP4"
+    assert mistral.default_moe_backend is None
+    assert mistral.quantization == "compressed-tensors"
+    assert mistral.runtime_defaults.reasoning_parser == "mistral"
+    assert mistral.source.token_policy == "optional"
+    assert mistral.source.preloaded is not None
+    assert (
+        mistral.source.preloaded.relative_path
+        == "Mistral-Small-4-119B-2603-NVFP4"
+    )
 
 
 def test_resolve_fp8_plan_defaults():
@@ -83,15 +95,20 @@ def test_resolve_fp8_plan_defaults():
 def test_resolve_remote_variant_models_images_and_token_policies():
     gemma = resolve_launch_plan(LaunchArgs(variant="gemma4-nvfp4"), {})
     ornith = resolve_launch_plan(LaunchArgs(variant="ornith-nvfp4"), {})
+    mistral = resolve_launch_plan(LaunchArgs(variant="mistral4-nvfp4"), {})
 
     assert gemma.model == "nvidia/Gemma-4-26B-A4B-NVFP4"
     assert gemma.image == DEFAULT_GEMMA4_NVFP4_IMAGE
     assert ornith.model == "sakamakismile/Ornith-1.0-35B-NVFP4"
     assert ornith.image == DEFAULT_ORNITH_NVFP4_IMAGE
+    assert mistral.model == "mistralai/Mistral-Small-4-119B-2603-NVFP4"
+    assert mistral.image == DEFAULT_MISTRAL4_NVFP4_IMAGE
     assert gemma.requires_hf_token is False
     assert gemma.inject_hf_token is True
     assert ornith.requires_hf_token is False
     assert ornith.inject_hf_token is True
+    assert mistral.requires_hf_token is False
+    assert mistral.inject_hf_token is True
 
 
 def test_preloaded_model_is_selected_and_mounted_read_only(
@@ -234,6 +251,34 @@ def test_plan_uses_dgx_spark_fp8_arguments(make_plan):
     assert _argument_value(plan.vllm_args, "--speculative-config") == (
         '{"method":"mtp","num_speculative_tokens":2}'
     )
+
+
+def test_plan_uses_single_spark_mistral4_arguments(make_plan):
+    plan = make_plan("mistral4-nvfp4", reasoning=True)
+
+    assert plan.model == "mistralai/Mistral-Small-4-119B-2603-NVFP4"
+    assert _argument_value(plan.vllm_args, "--quantization") == (
+        "compressed-tensors"
+    )
+    assert _argument_value(plan.vllm_args, "--gpu-memory-utilization") == "0.8"
+    assert _argument_value(plan.vllm_args, "--max-model-len") == "131072"
+    assert _argument_value(plan.vllm_args, "--max-num-seqs") == "128"
+    assert _argument_value(plan.vllm_args, "--max-num-batched-tokens") == "16384"
+    assert _argument_value(plan.vllm_args, "--load-format") == "mistral"
+    assert _argument_value(plan.vllm_args, "--tokenizer-mode") == "mistral"
+    assert _argument_value(plan.vllm_args, "--config-format") == "mistral"
+    assert _argument_value(plan.vllm_args, "--attention-backend") == "TRITON_MLA"
+    assert _argument_value(plan.vllm_args, "--reasoning-parser") == "mistral"
+    assert _argument_value(plan.vllm_args, "--tool-call-parser") == "mistral"
+    assert _argument_value(plan.vllm_args, "--limit-mm-per-prompt") == (
+        '{"image":4}'
+    )
+    assert _argument_value(plan.vllm_args, "--kv-cache-memory-bytes") == (
+        "15032385536"
+    )
+    assert "--skip-mm-profiling" in plan.vllm_args
+    assert "--enable-chunked-prefill" in plan.vllm_args
+    assert "--moe-backend" not in plan.vllm_args
 
 
 def test_plan_uses_compressed_tensors_for_ornith(make_plan):

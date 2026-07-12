@@ -122,6 +122,9 @@ def test_profiles_preserve_latest_model_and_runtime_defaults():
     assert nemotron_omni.runtime_defaults.tool_call_parser == "qwen3_coder"
     assert nemotron_omni.runtime_defaults.always_enable_parsers is True
     assert nemotron_omni.runtime_defaults.gpu_memory_utilization == 0.4
+    assert nemotron_omni.runtime_defaults.tuned_config_subdir == (
+        "tuned_configs/nemotron3_nano_omni"
+    )
     assert nemotron_omni.source.token_policy == "optional"
     assert nemotron_omni.source.preloaded is not None
     assert nemotron_omni.source.preloaded.relative_path == (
@@ -405,6 +408,7 @@ def test_plan_uses_single_spark_nemotron3_nano_omni_arguments(make_plan):
     assert _argument_value(plan.vllm_args, "--max-num-batched-tokens") == "32768"
     assert _argument_value(plan.vllm_args, "--load-format") == "fastsafetensors"
     assert _argument_value(plan.vllm_args, "--kv-cache-dtype") == "fp8"
+    assert _argument_value(plan.vllm_args, "--mamba-ssm-cache-dtype") == "float32"
     assert _argument_value(plan.vllm_args, "--video-pruning-rate") == "0.5"
     assert _argument_value(plan.vllm_args, "--reasoning-parser") == "nemotron_v3"
     assert _argument_value(plan.vllm_args, "--tool-call-parser") == "qwen3_coder"
@@ -421,6 +425,20 @@ def test_plan_uses_single_spark_nemotron3_nano_omni_arguments(make_plan):
     assert "--enable-chunked-prefill" in plan.vllm_args
     assert "--allowed-local-media-path" not in plan.vllm_args
     assert "--moe-backend" not in plan.vllm_args
+    assert (
+        "VLLM_TUNED_CONFIG_FOLDER",
+        "/vllm-tuned-configs",
+    ) in plan.container_env
+    tuned_mount = next(
+        mount
+        for mount in plan.mounts
+        if mount.container_path == "/vllm-tuned-configs"
+    )
+    assert tuned_mount.read_only is True
+    assert (
+        tuned_mount.host_path
+        / "headdim=64,dstate=128,device_name=NVIDIA_GB10,cache_dtype=float32.json"
+    ).is_file()
     assert plan.startup_python_packages == (
         "av==18.0.0",
         "scipy==1.18.0",

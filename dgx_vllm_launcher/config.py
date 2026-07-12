@@ -215,10 +215,15 @@ NEMOTRON3_NANO_OMNI_RUNTIME_DEFAULTS = VariantRuntimeDefaults(
     max_num_seqs=8,
     max_num_batched_tokens=32768,
     load_format="fastsafetensors",
+    tuned_config_subdir="tuned_configs/nemotron3_nano_omni",
     always_enable_parsers=True,
     extra_vllm_args=(
         "--kv-cache-dtype",
         "fp8",
+        # The remote-code Omni architecture misses vLLM's NemotronH auto-hook;
+        # FP32 is NVIDIA's accuracy-preserving SSM state dtype for this model.
+        "--mamba-ssm-cache-dtype",
+        "float32",
         "--video-pruning-rate",
         "0.5",
         "--limit-mm-per-prompt",

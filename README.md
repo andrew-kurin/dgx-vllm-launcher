@@ -269,6 +269,7 @@ Trade-offs:
 - Forced long output can take the full 48 denoising steps per canvas and be slower than favorable benchmark prompts.
 - Overall reasoning, coding, vision, and retrieval quality is lower than autoregressive Gemma 4 on Google's published evaluations.
 - Tool calls work best with thinking enabled.
+- With thinking disabled, the model can still emit a thought channel; vLLM then returns the answer in `reasoning` and may leave `content` null. Clients should consume both fields or enable thinking for those prompts.
 - Even a two-token launcher warmup evaluates a full canvas internally, so startup checks are heavier than for other profiles.
 - The checkpoint is Apache 2.0 but remains subject to Gemma's terms and prohibited-use policy.
 

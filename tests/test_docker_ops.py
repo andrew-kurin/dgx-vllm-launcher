@@ -57,6 +57,28 @@ def test_build_start_command_contains_complete_plan_and_management_label(
     assert ":/model:ro" in joined
 
 
+def test_nemotron_omni_installs_pinned_audio_extras_before_vllm(make_plan):
+    plan = make_plan("nemotron3-nano-omni-nvfp4")
+
+    command = build_start_command(plan)
+    image_index = command.index(plan.image)
+
+    assert command[command.index("--entrypoint") + 1] == "/bin/bash"
+    assert command[image_index + 1] == "-c"
+    setup_command = command[image_index + 2]
+    assert "python3 -m pip install" in setup_command
+    assert "--no-deps" in setup_command
+    assert "--no-cache-dir" in setup_command
+    assert "--target /root/.cache/vllm/python-packages/" in setup_command
+    assert "importlib.metadata" in setup_command
+    assert "export PYTHONPATH=/root/.cache/vllm/python-packages/" in setup_command
+    for package in plan.startup_python_packages:
+        assert package in setup_command
+    assert 'exec vllm serve "$@"' in setup_command
+    assert command[image_index + 3] == "vllm"
+    assert command[image_index + 4] == plan.model
+
+
 def test_hf_token_is_referenced_but_never_embedded_in_command(make_plan):
     plan = make_plan("qwen36-fp8")
 

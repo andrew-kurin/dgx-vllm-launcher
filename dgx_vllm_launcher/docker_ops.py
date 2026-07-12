@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import shlex
@@ -125,6 +126,50 @@ def _raise_result_error(message: str, result: CommandResult) -> NoReturn:
     )
 
 
+def _python_package_setup_command(image: str, packages: tuple[str, ...]) -> str:
+    expected: dict[str, str] = {}
+    for package in packages:
+        name, separator, version = package.partition("==")
+        if not separator or not name or not version:
+            raise ValueError(f"startup Python package must be exactly pinned: {package!r}")
+        expected[name] = version
+
+    cache_key = hashlib.sha256(
+        "\0".join((image, *packages)).encode("utf-8")
+    ).hexdigest()[:16]
+    target = f"/root/.cache/vllm/python-packages/{cache_key}"
+    check_code = (
+        "import importlib, importlib.metadata as metadata, sys; "
+        "sys.path.insert(0, sys.argv[1]); "
+        f"expected = {expected!r}; "
+        "assert all(metadata.version(name) == version "
+        "for name, version in expected.items()); "
+        "[importlib.import_module(name.replace('-', '_')) for name in expected]"
+    )
+    check = shlex.join(["python3", "-c", check_code, target])
+    install = shlex.join(
+        [
+            "python3",
+            "-m",
+            "pip",
+            "install",
+            "--disable-pip-version-check",
+            "--root-user-action=ignore",
+            "--no-cache-dir",
+            "--no-deps",
+            "--target",
+            target,
+            "--upgrade",
+            *packages,
+        ]
+    )
+    return (
+        f"set -e\nif ! {check} >/dev/null 2>&1; then\n  {install}\nfi\n"
+        f"export PYTHONPATH={shlex.quote(target)}${{PYTHONPATH:+:$PYTHONPATH}}\n"
+        'exec vllm serve "$@"'
+    )
+
+
 def build_start_command(
     plan: LaunchPlan,
     *,
@@ -149,6 +194,9 @@ def build_start_command(
         "--ipc=host",
     ]
 
+    if plan.startup_python_packages:
+        command.extend(["--entrypoint", "/bin/bash"])
+
     if plan.restart_policy:
         command.extend(["--restart", plan.restart_policy])
 
@@ -165,7 +213,19 @@ def build_start_command(
             value += ":ro"
         command.extend(["-v", value])
 
-    command.extend([plan.image, plan.model, *plan.vllm_args])
+    command.append(plan.image)
+    if plan.startup_python_packages:
+        command.extend(
+            [
+                "-c",
+                _python_package_setup_command(
+                    plan.image,
+                    plan.startup_python_packages,
+                ),
+                "vllm",
+            ]
+        )
+    command.extend([plan.model, *plan.vllm_args])
     return command
 
 

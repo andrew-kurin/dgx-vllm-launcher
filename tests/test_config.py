@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,7 @@ from dgx_vllm_launcher.config import (
     DEFAULT_FP8_IMAGE,
     DEFAULT_GEMMA4_NVFP4_IMAGE,
     DEFAULT_MISTRAL4_NVFP4_IMAGE,
+    DEFAULT_NEMOTRON3_NANO_OMNI_NVFP4_IMAGE,
     DEFAULT_ORNITH_NVFP4_IMAGE,
     DEFAULT_READY_TIMEOUT,
     HuggingFaceModel,
@@ -38,6 +40,24 @@ def test_default_ready_timeout_accommodates_cold_mistral_downloads():
     assert DEFAULT_READY_TIMEOUT == 10800
 
 
+def test_startup_python_packages_must_be_exactly_pinned(monkeypatch):
+    profile = VARIANT_PROFILES["nemotron3-nano-omni-nvfp4"]
+    monkeypatch.setitem(
+        VARIANT_PROFILES,
+        "nemotron3-nano-omni-nvfp4",
+        replace(
+            profile,
+            runtime_defaults=replace(
+                profile.runtime_defaults,
+                startup_python_packages=("av",),
+            ),
+        ),
+    )
+
+    with pytest.raises(ConfigurationError, match="must be exactly pinned"):
+        resolve_launch_plan(LaunchArgs(variant="nemotron3-nano-omni-nvfp4"), {})
+
+
 def test_profiles_preserve_latest_model_and_runtime_defaults():
     fp8 = VARIANT_PROFILES["qwen36-fp8"]
     qwen_nvfp4 = VARIANT_PROFILES["qwen36-nvfp4"]
@@ -45,6 +65,7 @@ def test_profiles_preserve_latest_model_and_runtime_defaults():
     ornith = VARIANT_PROFILES["ornith-nvfp4"]
     mistral = VARIANT_PROFILES["mistral4-nvfp4"]
     diffusion_gemma = VARIANT_PROFILES["diffusion-gemma-nvfp4"]
+    nemotron_omni = VARIANT_PROFILES["nemotron3-nano-omni-nvfp4"]
 
     assert fp8.source.token_policy == "optional"
     assert fp8.default_moe_backend == "triton"
@@ -92,6 +113,20 @@ def test_profiles_preserve_latest_model_and_runtime_defaults():
         diffusion_gemma.source.preloaded.relative_path
         == "diffusiongemma-26B-A4B-it-NVFP4"
     )
+    assert nemotron_omni.model == (
+        "nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-NVFP4"
+    )
+    assert nemotron_omni.default_moe_backend is None
+    assert nemotron_omni.quantization == "modelopt_mixed"
+    assert nemotron_omni.runtime_defaults.reasoning_parser == "nemotron_v3"
+    assert nemotron_omni.runtime_defaults.tool_call_parser == "qwen3_coder"
+    assert nemotron_omni.runtime_defaults.always_enable_parsers is True
+    assert nemotron_omni.runtime_defaults.gpu_memory_utilization == 0.4
+    assert nemotron_omni.source.token_policy == "optional"
+    assert nemotron_omni.source.preloaded is not None
+    assert nemotron_omni.source.preloaded.relative_path == (
+        "Nemotron-3-Nano-Omni-30B-A3B-Reasoning-NVFP4"
+    )
 
 
 def test_resolve_fp8_plan_defaults():
@@ -113,6 +148,9 @@ def test_resolve_remote_variant_models_images_and_token_policies():
     diffusion_gemma = resolve_launch_plan(
         LaunchArgs(variant="diffusion-gemma-nvfp4"), {}
     )
+    nemotron_omni = resolve_launch_plan(
+        LaunchArgs(variant="nemotron3-nano-omni-nvfp4"), {}
+    )
 
     assert gemma.model == "nvidia/Gemma-4-26B-A4B-NVFP4"
     assert gemma.image == DEFAULT_GEMMA4_NVFP4_IMAGE
@@ -124,6 +162,10 @@ def test_resolve_remote_variant_models_images_and_token_policies():
         diffusion_gemma.model == "nvidia/diffusiongemma-26B-A4B-it-NVFP4"
     )
     assert diffusion_gemma.image == DEFAULT_DIFFUSION_GEMMA_NVFP4_IMAGE
+    assert nemotron_omni.model == (
+        "nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-NVFP4"
+    )
+    assert nemotron_omni.image == DEFAULT_NEMOTRON3_NANO_OMNI_NVFP4_IMAGE
     assert gemma.requires_hf_token is False
     assert gemma.inject_hf_token is True
     assert ornith.requires_hf_token is False
@@ -132,6 +174,8 @@ def test_resolve_remote_variant_models_images_and_token_policies():
     assert mistral.inject_hf_token is True
     assert diffusion_gemma.requires_hf_token is False
     assert diffusion_gemma.inject_hf_token is True
+    assert nemotron_omni.requires_hf_token is False
+    assert nemotron_omni.inject_hf_token is True
 
 
 def test_preloaded_model_is_selected_and_mounted_read_only(
@@ -340,6 +384,58 @@ def test_plan_uses_single_spark_diffusion_gemma_arguments(make_plan):
 
 def test_diffusion_gemma_reasoning_flag_enables_thinking_by_default(make_plan):
     plan = make_plan("diffusion-gemma-nvfp4", reasoning=True)
+
+    assert _argument_value(plan.vllm_args, "--default-chat-template-kwargs") == (
+        '{"enable_thinking":true}'
+    )
+    assert plan.vllm_args.count("--reasoning-parser") == 1
+    assert plan.vllm_args.count("--tool-call-parser") == 1
+
+
+def test_plan_uses_single_spark_nemotron3_nano_omni_arguments(make_plan):
+    plan = make_plan("nemotron3-nano-omni-nvfp4")
+
+    assert plan.model == (
+        "nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-NVFP4"
+    )
+    assert _argument_value(plan.vllm_args, "--quantization") == "modelopt_mixed"
+    assert _argument_value(plan.vllm_args, "--gpu-memory-utilization") == "0.4"
+    assert _argument_value(plan.vllm_args, "--max-model-len") == "131072"
+    assert _argument_value(plan.vllm_args, "--max-num-seqs") == "8"
+    assert _argument_value(plan.vllm_args, "--max-num-batched-tokens") == "32768"
+    assert _argument_value(plan.vllm_args, "--load-format") == "fastsafetensors"
+    assert _argument_value(plan.vllm_args, "--kv-cache-dtype") == "fp8"
+    assert _argument_value(plan.vllm_args, "--video-pruning-rate") == "0.5"
+    assert _argument_value(plan.vllm_args, "--reasoning-parser") == "nemotron_v3"
+    assert _argument_value(plan.vllm_args, "--tool-call-parser") == "qwen3_coder"
+    assert _argument_value(plan.vllm_args, "--default-chat-template-kwargs") == (
+        '{"enable_thinking":false}'
+    )
+    assert _argument_value(plan.vllm_args, "--limit-mm-per-prompt") == (
+        '{"video":1,"image":1,"audio":1}'
+    )
+    assert _argument_value(plan.vllm_args, "--media-io-kwargs") == (
+        '{"video":{"fps":2,"num_frames":256}}'
+    )
+    assert "--enable-auto-tool-choice" in plan.vllm_args
+    assert "--enable-chunked-prefill" in plan.vllm_args
+    assert "--allowed-local-media-path" not in plan.vllm_args
+    assert "--moe-backend" not in plan.vllm_args
+    assert plan.startup_python_packages == (
+        "av==18.0.0",
+        "scipy==1.18.0",
+        "soundfile==0.14.0",
+        "soxr==1.1.0",
+    )
+    assert any(
+        mount.container_path == "/root/.cache/vllm" and not mount.read_only
+        for mount in plan.mounts
+    )
+    assert all(mount.container_path != "/root/.cache/pip" for mount in plan.mounts)
+
+
+def test_nemotron3_nano_omni_reasoning_flag_enables_thinking(make_plan):
+    plan = make_plan("nemotron3-nano-omni-nvfp4", reasoning=True)
 
     assert _argument_value(plan.vllm_args, "--default-chat-template-kwargs") == (
         '{"enable_thinking":true}'

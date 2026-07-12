@@ -112,6 +112,11 @@ class RichReporter:
             "Smoke check", "enabled" if plan.run_smoke_check else "disabled"
         )
         settings.add_row("Restart policy", plan.restart_policy or "(none)")
+        if plan.startup_python_packages:
+            settings.add_row(
+                "Startup Python packages",
+                ", ".join(plan.startup_python_packages),
+            )
         self.console.print(Panel(settings, title="vLLM serve", expand=False))
 
         arguments = Table(

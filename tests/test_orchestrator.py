@@ -496,6 +496,7 @@ def test_orchestrator_show_defaults_does_not_compose_runtime():
         "ornith-nvfp4",
         "mistral4-nvfp4",
         "diffusion-gemma-nvfp4",
+        "nemotron3-nano-omni-nvfp4",
     }
 
 

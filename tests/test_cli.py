@@ -90,6 +90,13 @@ def test_parse_args_accepts_diffusion_gemma_nvfp4_variant():
     assert args.reasoning is True
 
 
+def test_parse_args_accepts_nemotron3_nano_omni_nvfp4_variant():
+    args = cli.parse_args(["nemotron3-nano-omni-nvfp4", "--reasoning"])
+
+    assert args.variant == "nemotron3-nano-omni-nvfp4"
+    assert args.reasoning is True
+
+
 def test_parse_args_show_defaults_without_variant():
     args = cli.parse_args(["--show-defaults"])
 

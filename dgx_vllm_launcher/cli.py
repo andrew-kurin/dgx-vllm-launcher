@@ -24,8 +24,8 @@ class LaunchArgs:
 def parse_args(argv: list[str] | None = None) -> LaunchArgs:
     parser = argparse.ArgumentParser(
         description=(
-            "Unified launcher for Qwen, Gemma, Ornith, Mistral, and "
-            "DiffusionGemma vLLM variants."
+            "Unified launcher for Qwen, Gemma, Ornith, Mistral, "
+            "DiffusionGemma, and Nemotron vLLM variants."
         ),
         formatter_class=argparse.RawTextHelpFormatter,
     )
@@ -40,8 +40,8 @@ def parse_args(argv: list[str] | None = None) -> LaunchArgs:
         "--reasoning",
         action="store_true",
         help=(
-            "Enable the selected model's reasoning path; for DiffusionGemma, "
-            "make thinking the server default"
+            "Enable the selected model's reasoning path; for DiffusionGemma "
+            "and Nemotron Omni, make thinking the server default"
         ),
     )
     parser.add_argument(

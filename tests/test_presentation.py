@@ -40,6 +40,9 @@ def test_default_profiles_include_latest_variant_settings():
     assert "marlin" in rendered
     assert "nvidia/Gemma-4-26B-A4B-NVFP4" in rendered
     assert "nvidia/diffusiongemma-26B-A4B-it-NVFP4" in rendered
+    assert (
+        "nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-NVFP4" in rendered
+    )
 
 
 def test_container_logs_are_rendered_as_text_not_rich_markup():

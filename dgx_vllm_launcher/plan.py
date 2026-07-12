@@ -58,6 +58,7 @@ class LaunchPlan:
     artifact_dir: Path
     mounts: tuple[Mount, ...]
     container_env: tuple[tuple[str, str], ...]
+    startup_python_packages: tuple[str, ...]
     vllm_args: tuple[str, ...]
     warnings: tuple[str, ...] = ()
 
@@ -67,6 +68,9 @@ class LaunchPlan:
 
 
 _RESTART_POLICY = re.compile(r"(?:no|always|unless-stopped|on-failure(?::\d+)?)")
+_EXACT_PYTHON_PACKAGE = re.compile(
+    r"[A-Za-z0-9][A-Za-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9._+!-]*"
+)
 _TUNED_CONFIG_CONTAINER_PATH = "/vllm-tuned-configs"
 
 
@@ -120,6 +124,21 @@ def _optional_backend(value: str | None, option: str) -> str | None:
     return value
 
 
+def _validate_startup_python_packages(packages: tuple[str, ...]) -> None:
+    seen: set[str] = set()
+    for package in packages:
+        if not _EXACT_PYTHON_PACKAGE.fullmatch(package):
+            raise ConfigurationError(
+                f"profile startup Python package must be exactly pinned: {package!r}"
+            )
+        name = re.sub(r"[-_.]+", "-", package.partition("==")[0].lower())
+        if name in seen:
+            raise ConfigurationError(
+                f"profile startup Python package is duplicated: {package!r}"
+            )
+        seen.add(name)
+
+
 def _resolved_path(raw_path: str) -> Path:
     return Path(raw_path).expanduser().resolve()
 
@@ -168,6 +187,7 @@ def resolve_launch_plan(
         linear_backend = profile.default_linear_backend
 
     runtime_defaults = profile.runtime_defaults
+    _validate_startup_python_packages(runtime_defaults.startup_python_packages)
     if not 0 < runtime_defaults.gpu_memory_utilization <= 1:
         raise ConfigurationError(
             "profile gpu_memory_utilization must be greater than 0 and at most 1"
@@ -323,6 +343,7 @@ def resolve_launch_plan(
         artifact_dir=artifact_dir,
         mounts=tuple(mounts),
         container_env=tuple(container_env),
+        startup_python_packages=runtime_defaults.startup_python_packages,
         vllm_args=vllm_args,
         warnings=tuple(warnings),
     )

@@ -12,6 +12,7 @@ A validated Docker launcher for serving supported FP8 and NVFP4 models with vLLM
 | `ornith-nvfp4` | `sakamakismile/Ornith-1.0-35B-NVFP4` | `Ornith-1.0-35B-NVFP4` | `(none)` |
 | `mistral4-nvfp4` | `mistralai/Mistral-Small-4-119B-2603-NVFP4` | `Mistral-Small-4-119B-2603-NVFP4` | `(none)` |
 | `diffusion-gemma-nvfp4` | `nvidia/diffusiongemma-26B-A4B-it-NVFP4` | `diffusiongemma-26B-A4B-it-NVFP4` | `(none)` |
+| `nemotron3-nano-omni-nvfp4` | `nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-NVFP4` | `Nemotron-3-Nano-Omni-30B-A3B-Reasoning-NVFP4` | `(none)` |
 
 The launcher provides:
 
@@ -36,6 +37,7 @@ uv run dvl gemma4-nvfp4
 uv run dvl ornith-nvfp4
 uv run dvl mistral4-nvfp4
 uv run dvl diffusion-gemma-nvfp4
+uv run dvl nemotron3-nano-omni-nvfp4
 ```
 
 The full command and shorter entrypoints are equivalent:
@@ -60,7 +62,7 @@ uv run dvl --show-defaults
 
 ## Authentication
 
-All default model repositories are public and ungated. Qwen FP8, Gemma, DiffusionGemma, Ornith, and Mistral use a Hugging Face token when one is available but can run anonymously. Qwen NVFP4 does not request token injection by default.
+All default model repositories are public and ungated. Qwen FP8, Gemma, DiffusionGemma, Nemotron, Ornith, and Mistral use a Hugging Face token when one is available but can run anonymously. Qwen NVFP4 does not request token injection by default.
 
 An optional token can be supplied for authenticated download rate limits:
 
@@ -84,7 +86,7 @@ dvl [variant] [-r|--reasoning] [-w|--no-warmup]
 
 Arguments:
 
-- `-r, --reasoning` — enable the selected profile's reasoning path; for DiffusionGemma this makes thinking the server default
+- `-r, --reasoning` — enable the selected profile's reasoning path; for DiffusionGemma and Nemotron Omni this makes thinking the server default
 - `-w, --no-warmup` — skip post-health warmup requests
 - `-s, --no-smoke-check` — skip the final completion smoke check
 - `-d, --detach` — exit only after all enabled startup checks pass
@@ -103,6 +105,7 @@ Reasoning configuration is profile-driven:
 - Gemma uses the Gemma 4 parser, tool parser, and vLLM tool chat template.
 - Mistral uses its native tokenizer plus the Mistral reasoning and tool parsers. Clients opt into thinking per request with `reasoning_effort="high"`.
 - DiffusionGemma always loads the Gemma 4 reasoning/tool parsers so channel markers never leak into normal text. Thinking defaults off, or on with `--reasoning`; clients can override it per request with `chat_template_kwargs={"enable_thinking": ...}`.
+- Nemotron 3 Nano Omni always loads the `nemotron_v3` reasoning parser and Qwen 3 Coder tool parser. Thinking defaults off, or on with `--reasoning`; clients can override it per request with `chat_template_kwargs={"enable_thinking": ...}`.
 
 ## Preloaded checkpoints
 
@@ -114,6 +117,7 @@ uv run dvl gemma4-nvfp4 --use-preloaded-models
 uv run dvl ornith-nvfp4 --use-preloaded-models
 uv run dvl mistral4-nvfp4 --use-preloaded-models
 uv run dvl diffusion-gemma-nvfp4 --use-preloaded-models
+uv run dvl nemotron3-nano-omni-nvfp4 --use-preloaded-models
 ```
 
 The default root is `~/models`. Override it with either:
@@ -123,7 +127,7 @@ VLLM_PRELOADED_MODELS_DIR=/opt/models uv run dvl gemma4-nvfp4 --use-preloaded-mo
 uv run dvl gemma4-nvfp4 --use-preloaded-models --preloaded-models-dir /opt/models
 ```
 
-When the expected directory exists, it is mounted read-only at `/model`. If it is missing, the launcher emits a warning and uses the configured Hugging Face model ID. A selected preloaded Gemma, DiffusionGemma, Ornith, or Mistral model does not receive an optional HF token.
+When the expected directory exists, it is mounted read-only at `/model`. If it is missing, the launcher emits a warning and uses the configured Hugging Face model ID. A selected preloaded Gemma, DiffusionGemma, Nemotron, Ornith, or Mistral model does not receive an optional HF token.
 
 ## Startup and cleanup behavior
 
@@ -182,6 +186,7 @@ docker stop vllm-qwen36-nvfp4
 - `VLLM_IMAGE_ORNITH_NVFP4` — Ornith NVFP4 image override
 - `VLLM_IMAGE_MISTRAL4_NVFP4` — Mistral Small 4 NVFP4 image override
 - `VLLM_IMAGE_DIFFUSION_GEMMA_NVFP4` — DiffusionGemma NVFP4 image override
+- `VLLM_IMAGE_NEMOTRON3_NANO_OMNI_NVFP4` — Nemotron 3 Nano Omni NVFP4 image override
 
 All profiles use the immutable vLLM image digest pinned in `dgx_vllm_launcher/config.py`.
 
@@ -191,7 +196,7 @@ All profiles use the immutable vLLM image digest pinned in `dgx_vllm_launcher/co
 - `VLLM_MARLIN_USE_ATOMIC_ADD` — default `1`
 - `VLLM_ENABLE_INDUCTOR_MAX_AUTOTUNE` — default `1`
 
-Use `--linear-backend` and `--moe-backend` for explicit kernel selection. Qwen NVFP4 and DiffusionGemma use `fastsafetensors`, so the standard safetensors strategy does not apply to those profiles.
+Use `--linear-backend` and `--moe-backend` for explicit kernel selection. Qwen NVFP4, DiffusionGemma, and Nemotron Omni use `fastsafetensors`, so the standard safetensors strategy does not apply to those profiles.
 
 ### Hugging Face
 
@@ -224,7 +229,7 @@ Qwen NVFP4 follows NVIDIA's DGX Spark recipe while retaining the launcher's 128K
 
 A separate GB10 tune of the NVFP4 profile's BF16 Triton MTP-drafter MoE kernel was not retained. Although isolated kernels improved 2–8%, the complete server regressed C4 decode and prefill; the target model's Marlin experts were unaffected. The drafter therefore continues to use vLLM's default Triton configuration.
 
-Both NVIDIA NVFP4 profiles use vLLM's `modelopt_fp4` quantizer. Ornith and Mistral use their checkpoints' declared `compressed-tensors` quantization format and leave MoE backend selection on automatic.
+Qwen NVFP4, Gemma 4, and DiffusionGemma use vLLM's `modelopt_fp4` quantizer. Nemotron Omni uses `modelopt_mixed` because its routed experts are NVFP4 while Mamba, attention, and shared-expert layers use FP8. Ornith and Mistral use their checkpoints' declared `compressed-tensors` quantization format and leave MoE backend selection on automatic.
 
 ## Mistral Small 4 notes
 
@@ -272,6 +277,28 @@ Trade-offs:
 - With thinking disabled, the model can still emit a thought channel; vLLM then returns the answer in `reasoning` and may leave `content` null. Clients should consume both fields or enable thinking for those prompts.
 - Even a two-token launcher warmup evaluates a full canvas internally, so startup checks are heavier than for other profiles.
 - The checkpoint is Apache 2.0 but remains subject to Gemma's terms and prohibited-use policy.
+
+## Nemotron 3 Nano Omni notes
+
+`nemotron3-nano-omni-nvfp4` serves NVIDIA's 20.9 GB mixed-precision checkpoint on one DGX Spark. It accepts text, image, video, and audio inputs and produces text, parsed reasoning, JSON, and tool calls. The profile starts from NVIDIA's single-Spark recipe and uses a GB10-validated memory budget with:
+
+- `modelopt_mixed` quantization: NVFP4 routed experts plus FP8 Mamba, attention, and shared-expert layers
+- `--gpu-memory-utilization 0.4`, an FP8 KV cache, a 128K context limit, eight sequences, and 32K batched tokens
+- Efficient Video Sampling at a 0.5 pruning rate
+- one image, one video, and one audio input per prompt
+- video sampling at 2 FPS with at most 256 frames
+- prefix caching, chunked prefill, `nemotron_v3` reasoning parsing, and Qwen 3 Coder tool parsing
+- thinking off by default and on by default with `--reasoning`
+
+The server keeps vLLM generation defaults rather than silently importing checkpoint sampling values. Clients should send NVIDIA's recommended `temperature=0.2`, `top_p=0.95`, and `top_k=1` without thinking, or `temperature=0.6`, `top_p=0.95`, and `top_k=20` with thinking.
+
+The pinned vLLM image omits optional audio wheels. Before starting vLLM, this profile installs exact versions of `av`, `scipy`, `soundfile`, and `soxr` without resolving transitive dependencies. The installed package set is content-keyed by image and package versions under `VLLM_CACHE_DIR/python-packages`, so subsequent starts reuse it without downloading again. Other profiles retain the image's normal entrypoint and do not run this setup step.
+
+For security, the profile deliberately does not set `--allowed-local-media-path`. Send HTTPS or data URLs for media rather than exposing container-local files to API clients.
+
+On the validated GB10, automatic selection used FlashInfer CUTLASS for NVFP4 MoE, FlashInfer scaled matrix multiplication for FP8 linears, and FlashInfer attention. NVIDIA's 0.8 memory setting reserved about 94.0 GiB and left only 16 GiB of shared memory available despite the eight-sequence cap. The 0.4 profile reserves about 40.2 GiB, leaves about 73 GiB available at initial idle, and still provides 5.26M KV-cache tokens—40.2 full 128K contexts for at most eight scheduled requests.
+
+The lower memory budget had no measured throughput penalty. Forced 256-token raw completions delivered about 58.5 tok/s single-stream, 160.5 aggregate tok/s at concurrency four, and 244–300 aggregate tok/s across concurrency-eight runs. Eight simultaneous 120,045-token exact-key requests all succeeded in 167.5 seconds, and eight simultaneous two-minute/240-frame videos all returned the correct result in 44.0 seconds while retaining roughly 57 GiB of available memory. Single-request exact-key retrieval succeeded at 64,059 and 120,060 input tokens in 8.7 and 20.1 seconds. Repeating a 32K-token prefix reduced completion latency from 3.65 to 0.27 seconds, validating Mamba-aligned prefix caching. Text, parsed reasoning, structured JSON, tool calls, image, audio, silent video, and combined video-with-audio data URLs all completed successfully.
 
 ## Gemma 4 notes
 

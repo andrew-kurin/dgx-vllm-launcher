@@ -11,12 +11,14 @@ import subprocess
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from functools import cache
+from ipaddress import ip_address
 from typing import NoReturn
 
 from .launcher import ContainerInspectionError, ContainerNotFoundError
 from .plan import LaunchPlan
 
 MANAGED_LABEL = "com.andrewkurin.dgx-vllm-launcher.managed"
+MANAGED_LABEL_VALUE = "v2"
 VARIANT_LABEL = "com.andrewkurin.dgx-vllm-launcher.variant"
 LAUNCH_INSTANCE_LABEL = "com.andrewkurin.dgx-vllm-launcher.launch-instance"
 _MISSING_CONTAINER_MARKERS = ("no such object", "no such container")
@@ -30,6 +32,11 @@ _SECRET_ASSIGNMENT = re.compile(
 def _container_is_missing(stderr: str) -> bool:
     normalized = stderr.lower()
     return any(marker in normalized for marker in _MISSING_CONTAINER_MARKERS)
+
+
+def _docker_engine_major(version: str) -> int | None:
+    match = re.match(r"\s*[vV]?(\d+)(?:[.-]|\s*$)", version)
+    return int(match.group(1)) if match is not None else None
 
 
 def redact_command(command: list[str] | tuple[str, ...]) -> tuple[str, ...]:
@@ -207,7 +214,7 @@ def build_start_command(
         "--name",
         plan.container_name,
         "--label",
-        f"{MANAGED_LABEL}=true",
+        f"{MANAGED_LABEL}={MANAGED_LABEL_VALUE}",
         "--label",
         f"{VARIANT_LABEL}={plan.variant}",
         "--label",
@@ -289,13 +296,26 @@ class DockerRuntime:
     def __init__(self, process_env: Mapping[str, str] | None = None) -> None:
         self._process_env = os.environ if process_env is None else process_env
 
-    def prepare(self, plan: LaunchPlan) -> None:
+    def prepare(self, plan: LaunchPlan) -> tuple[str, ...]:
         """Validate Docker and ensure the image exists before replacing a service."""
 
-        run_docker(
+        version = run_docker(
             ["docker", "version", "--format", "{{.Server.Version}}"],
             timeout=15,
         )
+        warnings: list[str] = []
+        engine_major = _docker_engine_major(version.stdout)
+        if (
+            ip_address(plan.bind_address).is_loopback
+            and engine_major is not None
+            and engine_major < 28
+        ):
+            warnings.append(
+                "SECURITY WARNING: Docker Engine "
+                f"{version.stdout.strip()} predates 28.0; ports published to a "
+                "loopback address may still be reachable from the local network. "
+                "Upgrade Docker Engine or treat this service as network-accessible."
+            )
         image = run_docker(
             ["docker", "image", "inspect", plan.image],
             check=False,
@@ -308,6 +328,7 @@ class DockerRuntime:
                 ["docker", "pull", plan.image],
                 capture_output=False,
             )
+        return tuple(warnings)
 
     def container_exists(self, name: str) -> bool:
         result = run_docker(
@@ -362,6 +383,10 @@ class DockerRuntime:
             timeout=10,
         )
         if result.returncode != 0:
+            if _container_is_missing(result.stderr):
+                raise ContainerNotFoundError(
+                    f"Docker container {container} no longer exists"
+                )
             _raise_result_error("Could not inspect Docker container labels", result)
         try:
             labels = json.loads(result.stdout)
@@ -371,9 +396,17 @@ class DockerRuntime:
             ) from exc
         if not isinstance(labels, dict):
             return False
-        if labels.get(MANAGED_LABEL) != "true":
-            return False
-        return launch_id is None or labels.get(LAUNCH_INSTANCE_LABEL) == launch_id
+        marker = labels.get(MANAGED_LABEL)
+        if launch_id is not None:
+            return (
+                marker == MANAGED_LABEL_VALUE
+                and labels.get(LAUNCH_INSTANCE_LABEL) == launch_id
+            )
+
+        # TODO(remove backward-compat managed label): Stop accepting the legacy
+        # `managed=true` marker for replacement in v0.2.0 after existing
+        # containers have been relaunched with the versioned marker.
+        return marker in {MANAGED_LABEL_VALUE, "true"}
 
     def container_running(self, container: str, *, timeout: float) -> bool:
         try:
@@ -489,10 +522,20 @@ class DockerRuntime:
         return "\n".join(streams) or "(no logs available)"
 
     def stop(self, name: str) -> None:
-        run_docker(["docker", "stop", name])
+        result = run_docker(["docker", "stop", name], check=False)
+        if result.returncode == 0:
+            return
+        if _container_is_missing(result.stderr):
+            raise ContainerNotFoundError(f"Docker container {name} no longer exists")
+        _raise_result_error("Could not stop Docker container", result)
 
     def remove(self, name: str) -> None:
-        run_docker(["docker", "rm", name])
+        result = run_docker(["docker", "rm", name], check=False)
+        if result.returncode == 0:
+            return
+        if _container_is_missing(result.stderr):
+            raise ContainerNotFoundError(f"Docker container {name} no longer exists")
+        _raise_result_error("Could not remove Docker container", result)
 
     def open_logs(
         self,

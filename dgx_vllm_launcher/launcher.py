@@ -42,7 +42,7 @@ class RuntimeLogStream(Protocol):
 
 
 class ContainerRuntime(Protocol):
-    def prepare(self, plan: LaunchPlan) -> None: ...
+    def prepare(self, plan: LaunchPlan) -> tuple[str, ...]: ...
 
     def container_id(self, name: str) -> str | None: ...
 
@@ -155,7 +155,8 @@ class Launcher:
         for warning in plan.warnings:
             self._reporter.warning(warning)
         self._reporter.info("Validating Docker and preparing the image...")
-        self._runtime.prepare(plan)
+        for warning in self._runtime.prepare(plan):
+            self._reporter.warning(warning)
         self._replace_existing_container(plan.container_name)
 
         launch_id = uuid4().hex
@@ -205,6 +206,7 @@ class Launcher:
                     raise ReadinessError("; ".join(smoke.failures))
 
             if plan.detach:
+                self._verify_detached_container(container_id, launch_id=launch_id)
                 cleanup_container = False
                 self._reporter.success(
                     "Startup checks passed; container is running in detached mode."
@@ -273,16 +275,40 @@ class Launcher:
         container_id = self._runtime.container_id(name)
         if container_id is None:
             return
-        if not self._runtime.container_is_managed(container_id):
+        try:
+            managed = self._runtime.container_is_managed(container_id)
+        except ContainerNotFoundError:
+            return
+        if not managed:
             raise LaunchError(
                 f"refusing to remove unmanaged container {name}; "
                 "rename or remove it explicitly"
             )
 
         self._reporter.warning(f"Replacing managed container {name}")
-        if self._runtime.container_running(container_id, timeout=10):
-            self._runtime.stop(container_id)
-        self._runtime.remove(container_id)
+        try:
+            if self._runtime.container_running(container_id, timeout=10):
+                self._runtime.stop(container_id)
+            self._runtime.remove(container_id)
+        except ContainerNotFoundError:
+            return
+
+    def _verify_detached_container(self, container_id: str, *, launch_id: str) -> None:
+        try:
+            owned = self._runtime.container_is_managed(
+                container_id,
+                launch_id=launch_id,
+            )
+            if not owned:
+                raise ReadinessError(
+                    "started container identity changed during startup checks"
+                )
+            if not self._runtime.container_running(container_id, timeout=10):
+                raise ReadinessError("started container stopped during startup checks")
+        except ContainerNotFoundError as exc:
+            raise ReadinessError(
+                "started container was replaced during startup checks"
+            ) from exc
 
     def _cleanup_managed_container(
         self,
@@ -307,6 +333,8 @@ class Launcher:
             if self._runtime.container_running(cleanup_id, timeout=10):
                 self._runtime.stop(cleanup_id)
             self._runtime.remove(cleanup_id)
+        except ContainerNotFoundError:
+            return
         except Exception as exc:
             self._reporter.warning(f"Container cleanup failed: {exc}")
 

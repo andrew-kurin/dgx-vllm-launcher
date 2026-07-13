@@ -787,6 +787,95 @@ def test_explicitly_empty_vllm_hf_cache_dir_is_rejected(make_plan):
 
 
 @pytest.mark.parametrize(
+    "setting",
+    [
+        "VLLM_CACHE_DIR",
+        "VLLM_ARTIFACT_DIR",
+        "VLLM_HF_CACHE_DIR",
+        "VLLM_PRELOADED_MODELS_DIR",
+    ],
+)
+def test_environment_path_symlink_loops_are_configuration_errors(
+    make_plan,
+    tmp_path: Path,
+    setting: str,
+):
+    loop = tmp_path / f"{setting.lower()}-loop"
+    loop.symlink_to(loop.name)
+
+    with pytest.raises(ConfigurationError, match=setting):
+        make_plan(env_overrides={setting: str(loop)})
+
+
+def test_hf_home_symlink_loop_is_a_configuration_error(tmp_path: Path):
+    loop = tmp_path / "hf-home-loop"
+    loop.symlink_to(loop.name)
+
+    with pytest.raises(ConfigurationError, match="HF_HOME"):
+        resolve_launch_plan(
+            LaunchArgs(variant="qwen36-nvfp4"),
+            {
+                "HF_HOME": str(loop),
+                "VLLM_CACHE_DIR": str(tmp_path / "vllm-cache"),
+                "VLLM_ARTIFACT_DIR": str(tmp_path / "artifacts"),
+                "VLLM_PRELOADED_MODELS_DIR": str(tmp_path / "models"),
+            },
+        )
+
+
+def test_cli_preloaded_root_symlink_loop_is_a_configuration_error(
+    make_plan,
+    tmp_path: Path,
+):
+    loop = tmp_path / "preloaded-root-loop"
+    loop.symlink_to(loop.name)
+
+    with pytest.raises(ConfigurationError, match="--preloaded-models-dir"):
+        make_plan(preloaded_models_dir=str(loop))
+
+
+def test_preloaded_candidate_symlink_loop_is_a_configuration_error(
+    make_plan,
+    tmp_path: Path,
+):
+    root = tmp_path / "models"
+    root.mkdir()
+    candidate = root / "Qwen3.6-35B-A3B-NVFP4"
+    candidate.symlink_to(candidate.name)
+
+    with pytest.raises(
+        ConfigurationError,
+        match="preloaded model candidate under --preloaded-models-dir",
+    ):
+        make_plan(
+            use_preloaded_models=True,
+            preloaded_models_dir=str(root),
+        )
+
+
+def test_unexpected_path_resolution_errors_are_not_reclassified(
+    make_plan,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    configured_path = tmp_path / "unexpected-error"
+    original_resolve = Path.resolve
+
+    def fail_for_configured_path(
+        path: Path,
+        strict: bool = False,
+    ) -> Path:
+        if path == configured_path:
+            raise AssertionError("unexpected internal failure")
+        return original_resolve(path, strict=strict)
+
+    monkeypatch.setattr(Path, "resolve", fail_for_configured_path)
+
+    with pytest.raises(AssertionError, match="unexpected internal failure"):
+        make_plan(env_overrides={"VLLM_CACHE_DIR": str(configured_path)})
+
+
+@pytest.mark.parametrize(
     "name",
     ["VLLM_MARLIN_USE_ATOMIC_ADD", "VLLM_ENABLE_INDUCTOR_MAX_AUTOTUNE"],
 )

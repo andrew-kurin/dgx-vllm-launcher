@@ -23,7 +23,7 @@ The launcher provides:
 - Health polling against a real monotonic deadline
 - Required warmup and smoke checks when enabled
 - Safe secret forwarding without putting tokens in Docker command arguments
-- Loopback-only API publishing by default, with an explicit bind-address override
+- Loopback API publishing by default, with an explicit bind-address override
 - Per-launch container identity, collision protection, and foreground cleanup
 
 ## Quick start
@@ -71,7 +71,7 @@ An optional token can be supplied for authenticated download rate limits:
 HF_TOKEN=... uv run dvl qwen36-fp8 --reasoning
 ```
 
-The launcher checks `HF_TOKEN`, `HUGGING_FACE_HUB_TOKEN`, `HF_HOME/token`, `~/.cache/huggingface/token`, and `~/.huggingface/token`. Tokens are passed through the Docker child-process environment and are never embedded in the Docker command line. The host token file is not mounted into the container; only the Hugging Face `hub` and `xet` cache subdirectories are persisted.
+The launcher checks `HF_TOKEN`, `HUGGING_FACE_HUB_TOKEN`, `HF_HOME/token`, `~/.cache/huggingface/token`, and `~/.huggingface/token`. The `HUGGING_FACE_HUB_TOKEN` alias and `~/.huggingface/token` fallback are deprecated through the 0.1.x releases and targeted for removal in v0.2.0. Tokens are passed through the Docker child-process environment and are never embedded in the Docker command line. The host token file is not mounted into the container; only the Hugging Face `hub` and `xet` cache subdirectories are persisted.
 
 ## Command-line usage
 
@@ -140,7 +140,7 @@ Before replacing a service, the launcher:
 4. Verifies the Docker daemon and pulls a missing image.
 5. Checks that an existing same-name container is managed by this launcher.
 
-Containers carry management and per-launch identity labels. Cleanup verifies that identity before stopping or removing anything, so an older foreground process cannot destroy a replacement container started under the same name. A same-name container without the management label is never removed automatically; rename or remove it explicitly. Containers created by older launcher versions do not have the label and therefore require one explicit cleanup.
+New containers carry a versioned management marker and a per-launch identity label. Cleanup verifies that identity before stopping or removing a container. For migration, replacement accepts legacy `managed=true` containers, while the new marker is deliberately unrecognized by launchers using the legacy name-based cleanup logic, so they cannot reap a replacement. A same-name container with neither the current nor legacy launcher marker is never removed automatically; rename or remove it explicitly.
 
 After startup:
 
@@ -173,7 +173,7 @@ docker stop vllm-qwen36-nvfp4
 
 - `VLLM_READY_TIMEOUT` — positive readiness timeout in seconds; default `10800` (3 hours)
 - `VLLM_WARMUP_REQUESTS` — nonnegative warmup count; default `2`
-- `VLLM_BIND_ADDRESS` — IP address on which Docker publishes the API; default `127.0.0.1`. Set `0.0.0.0` or `::` only for deliberate network exposure.
+- `VLLM_BIND_ADDRESS` — IP address on which Docker publishes the API; default `127.0.0.1`. [Docker Engine 28 or newer](https://docs.docker.com/engine/network/port-publishing/) enforces host-only access for localhost publishing. On older engines, same-L2 hosts may still reach a localhost-published port; the launcher warns, so upgrade Docker or enforce equivalent firewall rules. Set `0.0.0.0` or `::` only for deliberate network exposure.
 - `VLLM_HOST_PORT` — host port mapped to container port 8000; default `8000`
 - `VLLM_CACHE_DIR` — host vLLM/TorchInductor cache; default `~/.cache/vllm`
 - `VLLM_HF_CACHE_DIR` — Hugging Face cache root; its `hub` and `xet` subdirectories are persisted, while credentials remain on the host. Defaults to nonempty `HF_HOME` or `~/.cache/huggingface`.

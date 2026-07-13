@@ -12,6 +12,7 @@ from dgx_vllm_launcher import docker_ops
 from dgx_vllm_launcher.docker_ops import (
     LAUNCH_INSTANCE_LABEL,
     MANAGED_LABEL,
+    MANAGED_LABEL_VALUE,
     CommandResult,
     DockerCommandError,
     DockerLogStream,
@@ -75,7 +76,9 @@ def test_build_start_command_contains_complete_plan_and_management_label(
     joined = " ".join(command)
 
     assert "127.0.0.1:9000:8000" in command
-    assert f"{MANAGED_LABEL}=true" in command
+    assert MANAGED_LABEL_VALUE != "true"
+    assert f"{MANAGED_LABEL}={MANAGED_LABEL_VALUE}" in command
+    assert f"{MANAGED_LABEL}=true" not in command
     assert f"{LAUNCH_INSTANCE_LABEL}=launch-123" in command
     assert "--restart" in command and "unless-stopped" in command
     assert "--moe-backend" in command and "marlin" in command
@@ -234,6 +237,40 @@ def test_prepare_pulls_image_before_launch_when_missing(monkeypatch, make_plan):
     assert commands[2][1:3] == ["pull", plan.image]
 
 
+@pytest.mark.parametrize(
+    ("version", "bind_address", "expects_warning"),
+    [
+        ("27.5.1", "127.0.0.1", True),
+        ("v27.5.1", "::1", True),
+        ("28.0.0", "127.0.0.1", False),
+        ("27.5.1", "0.0.0.0", False),
+        ("development", "127.0.0.1", False),
+    ],
+)
+def test_prepare_warns_for_loopback_binding_on_older_docker_engines(
+    monkeypatch,
+    make_plan,
+    version,
+    bind_address,
+    expects_warning,
+):
+    plan = make_plan(env_overrides={"VLLM_BIND_ADDRESS": bind_address})
+
+    def fake_run_docker(args, **kwargs):
+        command = list(args)
+        stdout = version if command[1] == "version" else "ok"
+        return CommandResult(0, stdout, "", tuple(command))
+
+    monkeypatch.setattr(docker_ops, "run_docker", fake_run_docker)
+
+    warnings = DockerRuntime().prepare(plan)
+
+    assert bool(warnings) is expects_warning
+    if expects_warning:
+        assert "SECURITY WARNING" in warnings[0]
+        assert version in warnings[0]
+
+
 def test_container_exists_distinguishes_absence_from_docker_failure(monkeypatch):
     def missing_container(args, **kwargs):
         return CommandResult(
@@ -283,14 +320,27 @@ def test_container_id_distinguishes_identity_from_absence(monkeypatch):
 @pytest.mark.parametrize(
     ("labels", "launch_id", "expected"),
     [
+        ({MANAGED_LABEL: MANAGED_LABEL_VALUE}, None, True),
         ({MANAGED_LABEL: "true"}, None, True),
         ({MANAGED_LABEL: "false"}, None, False),
         (
-            {MANAGED_LABEL: "true", LAUNCH_INSTANCE_LABEL: "launch-123"},
+            {
+                MANAGED_LABEL: MANAGED_LABEL_VALUE,
+                LAUNCH_INSTANCE_LABEL: "launch-123",
+            },
             "launch-123",
             True,
         ),
-        ({MANAGED_LABEL: "true", LAUNCH_INSTANCE_LABEL: "other"}, "launch-123", False),
+        (
+            {MANAGED_LABEL: "true", LAUNCH_INSTANCE_LABEL: "launch-123"},
+            "launch-123",
+            False,
+        ),
+        (
+            {MANAGED_LABEL: MANAGED_LABEL_VALUE, LAUNCH_INSTANCE_LABEL: "other"},
+            "launch-123",
+            False,
+        ),
         (None, None, False),
     ],
 )
@@ -361,6 +411,39 @@ def test_container_state_inspection_distinguishes_absence_from_transient_failure
 
     with pytest.raises(ContainerNotFoundError, match="no longer exists"):
         DockerRuntime().container_running("missing", timeout=10)
+
+
+def test_container_label_inspection_classifies_confirmed_absence(monkeypatch):
+    monkeypatch.setattr(
+        docker_ops,
+        "run_docker",
+        lambda args, **_kwargs: CommandResult(
+            1,
+            "",
+            "Error: No such object: missing",
+            tuple(args),
+        ),
+    )
+
+    with pytest.raises(ContainerNotFoundError, match="no longer exists"):
+        DockerRuntime().container_is_managed("missing")
+
+
+@pytest.mark.parametrize("operation", ["stop", "remove"])
+def test_container_mutations_classify_confirmed_absence(monkeypatch, operation):
+    monkeypatch.setattr(
+        docker_ops,
+        "run_docker",
+        lambda args, **_kwargs: CommandResult(
+            1,
+            "",
+            "Error: No such container: missing",
+            tuple(args),
+        ),
+    )
+
+    with pytest.raises(ContainerNotFoundError, match="no longer exists"):
+        getattr(DockerRuntime(), operation)("missing")
 
 
 def test_logs_include_both_output_streams(monkeypatch):

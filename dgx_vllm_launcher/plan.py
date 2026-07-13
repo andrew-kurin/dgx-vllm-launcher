@@ -177,15 +177,32 @@ def _optional_backend(value: str | None, option: str) -> str | None:
     return value
 
 
-def _resolved_path(raw_path: str) -> Path:
-    return Path(raw_path).expanduser().resolve()
+def _resolved_path(raw_path: str, *, setting: str) -> Path:
+    try:
+        return Path(raw_path).expanduser().resolve()
+    except (OSError, RuntimeError) as exc:
+        raise ConfigurationError(
+            f"{setting} path could not be resolved: {raw_path!r}: {exc}"
+        ) from exc
 
 
-def _preloaded_candidate(root: Path, relative_path: str) -> Path:
-    candidate = Path(relative_path).expanduser()
-    if not candidate.is_absolute():
-        candidate = root / candidate
-    return candidate.resolve()
+def _preloaded_candidate(
+    root: Path,
+    relative_path: str,
+    *,
+    root_setting: str,
+) -> Path:
+    candidate = Path(relative_path)
+    try:
+        candidate = candidate.expanduser()
+        if not candidate.is_absolute():
+            candidate = root / candidate
+        return candidate.resolve()
+    except (OSError, RuntimeError) as exc:
+        raise ConfigurationError(
+            f"preloaded model candidate under {root_setting} could not be resolved: "
+            f"{candidate}: {exc}"
+        ) from exc
 
 
 def _resolve_image(env: Mapping[str, str], profile: VariantProfile) -> str:
@@ -229,6 +246,7 @@ def _resolve_model(
     args: LaunchArgs,
     profile: VariantProfile,
     preloaded_root: Path,
+    preloaded_root_setting: str,
 ) -> _ResolvedModel:
     mounts: list[Mount] = []
     warnings: list[str] = []
@@ -245,6 +263,7 @@ def _resolve_model(
             candidate = _preloaded_candidate(
                 preloaded_root,
                 preloaded.relative_path,
+                root_setting=preloaded_root_setting,
             )
             if candidate.is_dir():
                 preloaded_model_path = candidate
@@ -265,9 +284,14 @@ def _resolve_model(
 
 
 def _resolve_hf_cache_root(env: Mapping[str, str]) -> Path:
-    configured_hf_home = env.get("HF_HOME", "").strip()
-    default = configured_hf_home or DEFAULT_HF_CACHE_DIR
-    return _resolved_path(_env_value(env, "VLLM_HF_CACHE_DIR", default))
+    if "VLLM_HF_CACHE_DIR" in env:
+        raw_path = _env_value(env, "VLLM_HF_CACHE_DIR", DEFAULT_HF_CACHE_DIR)
+        setting = "VLLM_HF_CACHE_DIR"
+    else:
+        configured_hf_home = env.get("HF_HOME", "").strip()
+        raw_path = configured_hf_home or DEFAULT_HF_CACHE_DIR
+        setting = "HF_HOME" if configured_hf_home else "VLLM_HF_CACHE_DIR/HF_HOME"
+    return _resolved_path(raw_path, setting=setting)
 
 
 def _build_container_env(
@@ -341,23 +365,29 @@ def resolve_launch_plan(
     runtime_defaults = profile.runtime_defaults
 
     cache_dir = _resolved_path(
-        _env_value(env, "VLLM_CACHE_DIR", DEFAULT_VLLM_CACHE_DIR)
+        _env_value(env, "VLLM_CACHE_DIR", DEFAULT_VLLM_CACHE_DIR),
+        setting="VLLM_CACHE_DIR",
     )
     artifact_dir = _resolved_path(
-        _env_value(env, "VLLM_ARTIFACT_DIR", DEFAULT_ARTIFACT_DIR)
+        _env_value(env, "VLLM_ARTIFACT_DIR", DEFAULT_ARTIFACT_DIR),
+        setting="VLLM_ARTIFACT_DIR",
     )
-    preloaded_root_raw = (
-        args.preloaded_models_dir
-        if args.preloaded_models_dir is not None
-        else _env_value(
+    if args.preloaded_models_dir is not None:
+        preloaded_root_raw = args.preloaded_models_dir
+        preloaded_root_setting = "--preloaded-models-dir"
+    else:
+        preloaded_root_raw = _env_value(
             env,
             "VLLM_PRELOADED_MODELS_DIR",
             DEFAULT_PRELOADED_MODELS_DIR,
         )
-    )
+        preloaded_root_setting = "VLLM_PRELOADED_MODELS_DIR"
     if not preloaded_root_raw.strip():
-        raise ConfigurationError("preloaded models directory must not be empty")
-    preloaded_root = _resolved_path(preloaded_root_raw)
+        raise ConfigurationError(f"{preloaded_root_setting} must not be empty")
+    preloaded_root = _resolved_path(
+        preloaded_root_raw,
+        setting=preloaded_root_setting,
+    )
 
     mounts = [Mount(cache_dir, "/root/.cache/vllm")]
     tuned_config_dir: Path | None = None
@@ -379,7 +409,12 @@ def resolve_launch_plan(
                 read_only=True,
             )
         )
-    resolved_model = _resolve_model(args, profile, preloaded_root)
+    resolved_model = _resolve_model(
+        args,
+        profile,
+        preloaded_root,
+        preloaded_root_setting,
+    )
     mounts.extend(resolved_model.mounts)
 
     token_policy = profile.source.token_policy

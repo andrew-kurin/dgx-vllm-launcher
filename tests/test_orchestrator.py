@@ -61,6 +61,7 @@ class FakeRuntime:
         actual_exit_code: int = 0,
         running_results: Iterable[bool | Exception] = (),
         prepare_error: Exception | None = None,
+        prepare_warnings: tuple[str, ...] = (),
         start_error_after_create: Exception | None = None,
         log_wait_error: BaseException | None = None,
         on_log_wait: Callable[[], None] | None = None,
@@ -79,6 +80,7 @@ class FakeRuntime:
         self.actual_exit_code = actual_exit_code
         self.running_results = list(running_results)
         self.prepare_error = prepare_error
+        self.prepare_warnings = prepare_warnings
         self.start_error_after_create = start_error_after_create
         self.log_wait_error = log_wait_error
         self.on_log_wait = on_log_wait
@@ -98,10 +100,11 @@ class FakeRuntime:
         container = self._containers.get(self._named_container_id)
         return bool(container and container["running"])
 
-    def prepare(self, plan: LaunchPlan) -> None:
+    def prepare(self, plan: LaunchPlan) -> tuple[str, ...]:
         self.events.append("prepare")
         if self.prepare_error:
             raise self.prepare_error
+        return self.prepare_warnings
 
     def container_id(self, name: str) -> str | None:
         self.events.append("container-id")
@@ -115,6 +118,8 @@ class FakeRuntime:
     ) -> bool:
         self.events.append("managed")
         details = self._containers.get(container)
+        if details is None:
+            raise ContainerNotFoundError("container no longer exists")
         return bool(
             details
             and details["managed"]
@@ -563,6 +568,21 @@ def test_prepare_failure_leaves_existing_container_untouched(make_plan):
     assert runtime.exists is True
 
 
+def test_prepare_security_warning_is_reported(make_plan):
+    plan = make_plan(detach=True, no_warmup=True, no_smoke_check=True)
+    reporter = FakeReporter()
+    runtime = FakeRuntime(
+        prepare_warnings=("SECURITY WARNING: upgrade Docker Engine",),
+    )
+
+    assert _launcher(runtime, FakeClient(), reporter).launch(plan) == 0
+
+    assert (
+        "warning",
+        "SECURITY WARNING: upgrade Docker Engine",
+    ) in reporter.messages
+
+
 def test_unmanaged_container_is_never_removed(make_plan):
     plan = make_plan(detach=True, no_warmup=True, no_smoke_check=True)
     runtime = FakeRuntime(exists=True, managed=False)
@@ -573,6 +593,54 @@ def test_unmanaged_container_is_never_removed(make_plan):
     assert "remove" not in runtime.events
     assert "start" not in runtime.events
     assert runtime.exists is True
+
+
+@pytest.mark.parametrize("disappear_at", ["labels", "running", "stop", "remove"])
+def test_existing_container_disappearance_is_idempotent(make_plan, disappear_at):
+    plan = make_plan(detach=True, no_warmup=True, no_smoke_check=True)
+
+    class DisappearingRuntime(FakeRuntime):
+        def disappear(self, container: str) -> None:
+            self._containers.pop(container, None)
+            if self._named_container_id == container:
+                self._named_container_id = None
+            raise ContainerNotFoundError("container no longer exists")
+
+        def container_is_managed(
+            self,
+            container: str,
+            *,
+            launch_id: str | None = None,
+        ) -> bool:
+            if disappear_at == "labels" and container == "existing-id":
+                self.events.append("managed")
+                self.disappear(container)
+            return super().container_is_managed(container, launch_id=launch_id)
+
+        def container_running(self, container: str, *, timeout: float) -> bool:
+            if disappear_at == "running" and container == "existing-id":
+                self.events.append(f"running:{timeout:g}")
+                self.disappear(container)
+            return super().container_running(container, timeout=timeout)
+
+        def stop(self, name: str) -> None:
+            if disappear_at == "stop" and name == "existing-id":
+                self.events.append("stop")
+                self.disappear(name)
+            super().stop(name)
+
+        def remove(self, name: str) -> None:
+            if disappear_at == "remove" and name == "existing-id":
+                self.events.append("remove")
+                self.disappear(name)
+            super().remove(name)
+
+    runtime = DisappearingRuntime(exists=True, running=True)
+
+    assert _launcher(runtime, FakeClient(), FakeReporter()).launch(plan) == 0
+
+    assert runtime.exists is True
+    assert runtime._named_container_id == "container-id"
 
 
 def test_launch_health_failure_reports_startup_logs_and_cleans_container(make_plan):
@@ -675,9 +743,41 @@ def test_failed_start_does_not_clean_up_replacement_from_another_launch(make_pla
     assert "remove" not in runtime.events
 
 
+def test_detached_launch_rejects_replacement_during_successful_health_check(
+    make_plan,
+):
+    plan = make_plan(detach=True, no_warmup=True, no_smoke_check=True)
+    runtime = FakeRuntime()
+    reporter = FakeReporter()
+
+    class ReplacingClient(FakeClient):
+        def health(self, *, timeout: float) -> bool:
+            result = super().health(timeout=timeout)
+            runtime._containers.pop("container-id")
+            runtime._named_container_id = "replacement-id"
+            runtime._containers["replacement-id"] = {
+                "managed": True,
+                "launch_id": "new-launch",
+                "running": True,
+            }
+            return result
+
+    with pytest.raises(ReadinessError, match="replaced during startup checks"):
+        _launcher(runtime, ReplacingClient(), reporter).launch(plan)
+
+    assert runtime.container_id(plan.container_name) == "replacement-id"
+    assert runtime.running is True
+    assert not any(
+        "cleanup failed" in message.lower()
+        for level, message in reporter.messages
+        if level == "warning"
+    )
+
+
 def test_stale_foreground_launch_does_not_clean_up_replacement(make_plan):
     plan = make_plan(no_warmup=True, no_smoke_check=True)
     runtime = FakeRuntime()
+    reporter = FakeReporter()
 
     def replace_container() -> None:
         runtime._containers.pop("container-id")
@@ -691,11 +791,16 @@ def test_stale_foreground_launch_does_not_clean_up_replacement(make_plan):
     runtime.on_log_wait = replace_container
 
     with pytest.raises(ContainerInspectionError, match="no longer exists"):
-        _launcher(runtime, FakeClient(), FakeReporter()).launch(plan)
+        _launcher(runtime, FakeClient(), reporter).launch(plan)
 
     assert runtime.container_id(plan.container_name) == "replacement-id"
     assert runtime.running is True
     assert "remove" not in runtime.events
+    assert not any(
+        "cleanup failed" in message.lower()
+        for level, message in reporter.messages
+        if level == "warning"
+    )
 
 
 def test_foreground_exit_code_is_returned_and_container_is_cleaned(make_plan):

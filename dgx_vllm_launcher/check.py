@@ -6,9 +6,9 @@ import subprocess
 import sys
 
 
-def _run_python_module(module: str, *args: str) -> None:
+def _run_python_module(module: str, *args: str) -> int:
     cmd = [sys.executable, "-m", module, *args]
-    subprocess.run(cmd, check=True)
+    return subprocess.run(cmd, check=False).returncode
 
 
 def main() -> int:
@@ -20,6 +20,8 @@ def main() -> int:
     ]
 
     for module, args in checks:
-        _run_python_module(module, *args)
+        returncode = _run_python_module(module, *args)
+        if returncode != 0:
+            return returncode
 
     return 0

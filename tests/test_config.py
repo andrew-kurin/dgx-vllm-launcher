@@ -5,20 +5,20 @@ from pathlib import Path
 
 import pytest
 
-from dgx_vllm_launcher.cli import LaunchArgs
 from dgx_vllm_launcher.config import (
-    DEFAULT_DIFFUSION_GEMMA_NVFP4_IMAGE,
-    DEFAULT_FP8_IMAGE,
-    DEFAULT_GEMMA4_NVFP4_IMAGE,
-    DEFAULT_MISTRAL4_NVFP4_IMAGE,
-    DEFAULT_NEMOTRON3_NANO_OMNI_NVFP4_IMAGE,
-    DEFAULT_ORNITH_NVFP4_IMAGE,
+    DEFAULT_BIND_ADDRESS,
     DEFAULT_READY_TIMEOUT,
+    DEFAULT_VLLM_IMAGE,
     HuggingFaceModel,
     VARIANTS,
     VARIANT_PROFILES,
+    Variant,
 )
-from dgx_vllm_launcher.plan import ConfigurationError, resolve_launch_plan
+from dgx_vllm_launcher.plan import (
+    ConfigurationError,
+    LaunchArgs,
+    resolve_launch_plan,
+)
 
 
 def test_variant_profiles_are_complete_and_use_typed_sources():
@@ -36,26 +36,88 @@ def test_default_images_are_pinned_by_digest():
     )
 
 
+@pytest.mark.parametrize(
+    ("variant", "image_env_var", "legacy_image_env_var"),
+    [
+        ("qwen36-fp8", "VLLM_IMAGE_QWEN36_FP8", "VLLM_IMAGE_FP8"),
+        (
+            "qwen36-nvfp4",
+            "VLLM_IMAGE_QWEN36_NVFP4",
+            "VLLM_IMAGE_NVFP4",
+        ),
+        ("gemma4-nvfp4", "VLLM_IMAGE_GEMMA4_NVFP4", None),
+        ("ornith-nvfp4", "VLLM_IMAGE_ORNITH_NVFP4", None),
+        ("mistral4-nvfp4", "VLLM_IMAGE_MISTRAL4_NVFP4", None),
+        (
+            "diffusion-gemma-nvfp4",
+            "VLLM_IMAGE_DIFFUSION_GEMMA_NVFP4",
+            None,
+        ),
+        (
+            "nemotron3-nano-omni-nvfp4",
+            "VLLM_IMAGE_NEMOTRON3_NANO_OMNI_NVFP4",
+            None,
+        ),
+    ],
+)
+def test_profile_table_invariants(
+    variant: Variant,
+    image_env_var: str,
+    legacy_image_env_var: str | None,
+):
+    profile = VARIANT_PROFILES[variant]
+    runtime = profile.runtime_defaults
+
+    assert profile.variant == variant
+    assert profile.served_model_name == variant
+    assert profile.image_env_var == image_env_var
+    assert profile.legacy_image_env_var == legacy_image_env_var
+    assert profile.startup_message == f"Serving {profile.model} from Hugging Face..."
+    assert 0 < runtime.gpu_memory_utilization <= 1
+    assert runtime.max_model_len > 0
+    assert runtime.max_num_seqs > 0
+    assert runtime.max_num_batched_tokens > 0
+    if profile.source.preloaded is not None:
+        assert profile.source.preloaded.relative_path == profile.model.rsplit(
+            "/", 1
+        )[-1]
+
+
 def test_default_ready_timeout_accommodates_cold_mistral_downloads():
     assert DEFAULT_READY_TIMEOUT == 10800
 
 
-def test_startup_python_packages_must_be_exactly_pinned(monkeypatch):
+def test_startup_python_packages_must_be_exactly_pinned():
     profile = VARIANT_PROFILES["nemotron3-nano-omni-nvfp4"]
-    monkeypatch.setitem(
-        VARIANT_PROFILES,
-        "nemotron3-nano-omni-nvfp4",
-        replace(
-            profile,
-            runtime_defaults=replace(
-                profile.runtime_defaults,
-                startup_python_packages=("av",),
-            ),
-        ),
-    )
 
-    with pytest.raises(ConfigurationError, match="must be exactly pinned"):
-        resolve_launch_plan(LaunchArgs(variant="nemotron3-nano-omni-nvfp4"), {})
+    with pytest.raises(ValueError, match="must be exactly pinned"):
+        replace(
+            profile.runtime_defaults,
+            startup_python_packages=("av",),
+        )
+
+
+def test_duplicate_startup_python_packages_are_rejected_at_construction():
+    profile = VARIANT_PROFILES["nemotron3-nano-omni-nvfp4"]
+
+    with pytest.raises(ValueError, match="duplicated"):
+        replace(
+            profile.runtime_defaults,
+            startup_python_packages=("audio-lib==1.0", "audio_lib==2.0"),
+        )
+
+
+def test_invalid_static_profile_limits_are_rejected_at_construction():
+    runtime = VARIANT_PROFILES["qwen36-fp8"].runtime_defaults
+
+    with pytest.raises(ValueError, match="gpu_memory_utilization"):
+        replace(runtime, gpu_memory_utilization=0)
+    with pytest.raises(ValueError, match="max_model_len"):
+        replace(runtime, max_model_len=0)
+    with pytest.raises(ValueError, match="max_num_seqs"):
+        replace(runtime, max_num_seqs=0)
+    with pytest.raises(ValueError, match="max_num_batched_tokens"):
+        replace(runtime, max_num_batched_tokens=0)
 
 
 def test_profiles_preserve_latest_model_and_runtime_defaults():
@@ -136,12 +198,65 @@ def test_resolve_fp8_plan_defaults():
     plan = resolve_launch_plan(LaunchArgs(variant="qwen36-fp8"), {})
 
     assert plan.model == "Qwen/Qwen3.6-35B-A3B-FP8"
-    assert plan.image == DEFAULT_FP8_IMAGE
+    assert plan.image == DEFAULT_VLLM_IMAGE
     assert plan.served_model_name == "qwen36-fp8"
     assert plan.ready_timeout_seconds == DEFAULT_READY_TIMEOUT
     assert plan.requires_hf_token is False
     assert plan.inject_hf_token is True
     assert plan.base_url == "http://127.0.0.1:8000"
+
+
+@pytest.mark.parametrize("variant", VARIANTS)
+def test_each_profile_accepts_its_canonical_image_override(make_plan, variant: Variant):
+    profile = VARIANT_PROFILES[variant]
+    image = f"registry.example/{variant}:test"
+
+    plan = make_plan(variant, env_overrides={profile.image_env_var: image})
+
+    assert plan.image == image
+
+
+@pytest.mark.parametrize(
+    ("variant", "legacy_name"),
+    [
+        ("qwen36-fp8", "VLLM_IMAGE_FP8"),
+        ("qwen36-nvfp4", "VLLM_IMAGE_NVFP4"),
+    ],
+)
+def test_qwen_legacy_image_override_remains_a_fallback(
+    make_plan,
+    variant: Variant,
+    legacy_name: str,
+):
+    plan = make_plan(
+        variant,
+        env_overrides={legacy_name: "registry.example/legacy:test"},
+    )
+
+    assert plan.image == "registry.example/legacy:test"
+
+
+def test_canonical_image_override_wins_over_legacy_qwen_alias(make_plan):
+    plan = make_plan(
+        "qwen36-fp8",
+        env_overrides={
+            "VLLM_IMAGE_QWEN36_FP8": "registry.example/canonical:test",
+            "VLLM_IMAGE_FP8": "registry.example/legacy:test",
+        },
+    )
+
+    assert plan.image == "registry.example/canonical:test"
+
+
+def test_empty_canonical_image_override_is_rejected_without_legacy_fallback(make_plan):
+    with pytest.raises(ConfigurationError, match="VLLM_IMAGE_QWEN36_FP8"):
+        make_plan(
+            "qwen36-fp8",
+            env_overrides={
+                "VLLM_IMAGE_QWEN36_FP8": " ",
+                "VLLM_IMAGE_FP8": "registry.example/legacy:test",
+            },
+        )
 
 
 def test_resolve_remote_variant_models_images_and_token_policies():
@@ -156,19 +271,19 @@ def test_resolve_remote_variant_models_images_and_token_policies():
     )
 
     assert gemma.model == "nvidia/Gemma-4-26B-A4B-NVFP4"
-    assert gemma.image == DEFAULT_GEMMA4_NVFP4_IMAGE
+    assert gemma.image == DEFAULT_VLLM_IMAGE
     assert ornith.model == "sakamakismile/Ornith-1.0-35B-NVFP4"
-    assert ornith.image == DEFAULT_ORNITH_NVFP4_IMAGE
+    assert ornith.image == DEFAULT_VLLM_IMAGE
     assert mistral.model == "mistralai/Mistral-Small-4-119B-2603-NVFP4"
-    assert mistral.image == DEFAULT_MISTRAL4_NVFP4_IMAGE
+    assert mistral.image == DEFAULT_VLLM_IMAGE
     assert (
         diffusion_gemma.model == "nvidia/diffusiongemma-26B-A4B-it-NVFP4"
     )
-    assert diffusion_gemma.image == DEFAULT_DIFFUSION_GEMMA_NVFP4_IMAGE
+    assert diffusion_gemma.image == DEFAULT_VLLM_IMAGE
     assert nemotron_omni.model == (
         "nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-NVFP4"
     )
-    assert nemotron_omni.image == DEFAULT_NEMOTRON3_NANO_OMNI_NVFP4_IMAGE
+    assert nemotron_omni.image == DEFAULT_VLLM_IMAGE
     assert gemma.requires_hf_token is False
     assert gemma.inject_hf_token is True
     assert ornith.requires_hf_token is False
@@ -535,8 +650,46 @@ def test_host_port_drives_endpoint_and_docker_plan(make_plan):
     plan = make_plan(env_overrides={"VLLM_HOST_PORT": "9000"})
 
     assert plan.host_port == 9000
+    assert plan.bind_address == DEFAULT_BIND_ADDRESS
     assert plan.base_url == "http://127.0.0.1:9000"
     assert _argument_value(plan.vllm_args, "--port") == "8000"
+
+
+@pytest.mark.parametrize(
+    ("configured", "resolved", "docker_address", "base_url"),
+    [
+        ("0.0.0.0", "0.0.0.0", "0.0.0.0", "http://127.0.0.1:8000"),
+        ("192.0.2.10", "192.0.2.10", "192.0.2.10", "http://192.0.2.10:8000"),
+        ("::", "::", "[::]", "http://[::1]:8000"),
+        (
+            "2001:0db8::10",
+            "2001:db8::10",
+            "[2001:db8::10]",
+            "http://[2001:db8::10]:8000",
+        ),
+    ],
+)
+def test_bind_address_is_validated_and_drives_local_endpoint(
+    make_plan,
+    configured: str,
+    resolved: str,
+    docker_address: str,
+    base_url: str,
+):
+    plan = make_plan(env_overrides={"VLLM_BIND_ADDRESS": configured})
+
+    assert plan.bind_address == resolved
+    assert plan.docker_bind_address == docker_address
+    assert plan.base_url == base_url
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["", "localhost", "127.0.0.1:8000", "999.0.0.1", "fe80::1%eth0"],
+)
+def test_bind_address_rejects_invalid_or_scoped_values(make_plan, value: str):
+    with pytest.raises(ConfigurationError, match="VLLM_BIND_ADDRESS"):
+        make_plan(env_overrides={"VLLM_BIND_ADDRESS": value})
 
 
 def test_warmup_count_must_not_be_negative(make_plan):
@@ -584,9 +737,67 @@ def test_environment_settings_are_collected_in_plan(make_plan, tmp_path: Path):
     assert artifacts == plan.artifact_dir
     assert {
         mount.host_path for mount in plan.mounts if not mount.read_only
-    } == {cache, hf_cache}
+    } == {cache, hf_cache / "hub", hf_cache / "xet"}
     assert _argument_value(plan.vllm_args, "--safetensors-load-strategy") == "prefetch"
     assert ("VLLM_MARLIN_USE_ATOMIC_ADD", "0") in plan.container_env
+
+
+def test_hf_cache_mounts_exclude_host_token_file(make_plan, tmp_path: Path):
+    hf_cache = tmp_path / "huggingface"
+    token_path = hf_cache / "token"
+    token_path.parent.mkdir()
+    token_path.write_text("host-secret", encoding="utf-8")
+
+    plan = make_plan(
+        "qwen36-nvfp4",
+        env_overrides={"VLLM_HF_CACHE_DIR": str(hf_cache)},
+    )
+
+    hf_mounts = {
+        mount.container_path: mount.host_path
+        for mount in plan.mounts
+        if mount.container_path.startswith("/root/.cache/huggingface")
+    }
+    assert hf_mounts == {
+        "/root/.cache/huggingface/hub": hf_cache / "hub",
+        "/root/.cache/huggingface/xet": hf_cache / "xet",
+    }
+    assert token_path not in {mount.host_path for mount in plan.mounts}
+    assert hf_cache not in {mount.host_path for mount in plan.mounts}
+
+
+def test_empty_hf_home_falls_back_to_default_cache_root():
+    plan = resolve_launch_plan(
+        LaunchArgs(variant="qwen36-nvfp4"),
+        {"HF_HOME": "   "},
+    )
+
+    expected_root = Path("~/.cache/huggingface").expanduser().resolve()
+    hf_host_paths = {
+        mount.host_path
+        for mount in plan.mounts
+        if mount.container_path.startswith("/root/.cache/huggingface")
+    }
+    assert hf_host_paths == {expected_root / "hub", expected_root / "xet"}
+
+
+def test_explicitly_empty_vllm_hf_cache_dir_is_rejected(make_plan):
+    with pytest.raises(ConfigurationError, match="VLLM_HF_CACHE_DIR"):
+        make_plan(env_overrides={"VLLM_HF_CACHE_DIR": " "})
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["VLLM_MARLIN_USE_ATOMIC_ADD", "VLLM_ENABLE_INDUCTOR_MAX_AUTOTUNE"],
+)
+@pytest.mark.parametrize("value", ["", "true", "2", "-1", "banana"])
+def test_boolean_passthrough_environment_requires_zero_or_one(
+    make_plan,
+    name: str,
+    value: str,
+):
+    with pytest.raises(ConfigurationError, match=name):
+        make_plan(env_overrides={name: value})
 
 
 def test_variant_is_required_to_resolve_launch_plan():

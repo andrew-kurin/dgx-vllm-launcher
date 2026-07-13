@@ -5,12 +5,19 @@ import signal
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 
-from .cli import LaunchArgs, parse_args
+from .cli import parse_args
 from .config import VARIANTS, resolve_variant_profile
-from .docker_ops import DockerRuntime
+from .docker_ops import DockerCommandError, DockerRuntime
 from .http_ops import VllmClient
-from .launcher import Clock, ContainerRuntime, Launcher, SecretProvider, VllmService
-from .plan import resolve_launch_plan
+from .launcher import (
+    Clock,
+    ContainerRuntime,
+    Launcher,
+    LaunchError,
+    SecretProvider,
+    VllmService,
+)
+from .plan import ConfigurationError, LaunchArgs, resolve_launch_plan
 from .presentation import Reporter, RichReporter
 from .secrets import HuggingFaceTokenProvider
 
@@ -61,7 +68,7 @@ def run(
     except KeyboardInterrupt:
         resolved_reporter.warning("Interrupted. Exiting...")
         return 130
-    except Exception as exc:
+    except (ConfigurationError, LaunchError, DockerCommandError) as exc:
         resolved_reporter.error(f"Error: {exc}")
         return 1
 

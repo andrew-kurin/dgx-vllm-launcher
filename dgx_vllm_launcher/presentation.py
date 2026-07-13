@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from threading import Thread
+from threading import Event, Lock, Thread, current_thread
 from typing import Protocol
 
 from rich import box
@@ -52,37 +52,66 @@ class BackgroundLogTailer:
     ) -> None:
         self._stream_factory = stream_factory
         self._emit = emit
+        self._lock = Lock()
         self._stream: LogStream | None = None
-        self._running = False
+        self._stop_event: Event | None = None
         self._thread: Thread | None = None
+        self._stopping = False
 
     def start(self) -> None:
-        if self._running:
-            return
-        self._stream = self._stream_factory()
-        self._running = True
+        with self._lock:
+            if self._thread is not None or self._stopping:
+                return
 
-        def read_lines() -> None:
-            assert self._stream is not None
-            for line in self._stream.lines():
-                if not self._running:
-                    return
-                if line:
-                    self._emit(line)
+            stream = self._stream_factory()
+            stop_event = Event()
 
-        self._thread = Thread(target=read_lines, daemon=True)
-        self._thread.start()
+            def read_lines() -> None:
+                for line in stream.lines():
+                    if stop_event.is_set():
+                        return
+                    if line:
+                        self._emit(line)
+
+            thread = Thread(target=read_lines, daemon=True)
+            self._stream = stream
+            self._stop_event = stop_event
+            self._thread = thread
+            try:
+                thread.start()
+            except Exception:
+                self._stream = None
+                self._stop_event = None
+                self._thread = None
+                stop_event.set()
+                stream.close()
+                raise
 
     def stop(self) -> None:
-        if not self._running:
-            return
-        self._running = False
-        if self._stream is not None:
-            self._stream.close()
-        if self._thread is not None and self._thread.is_alive():
-            self._thread.join(timeout=1)
-        self._stream = None
-        self._thread = None
+        with self._lock:
+            if self._thread is None or self._stopping:
+                return
+            stream = self._stream
+            stop_event = self._stop_event
+            thread = self._thread
+            self._stopping = True
+
+        assert stream is not None
+        assert stop_event is not None
+        stop_event.set()
+        try:
+            stream.close()
+        finally:
+            try:
+                if thread.is_alive() and thread is not current_thread():
+                    thread.join(timeout=1)
+            finally:
+                with self._lock:
+                    if self._thread is thread:
+                        self._stream = None
+                        self._stop_event = None
+                        self._thread = None
+                    self._stopping = False
 
 
 class RichReporter:
@@ -99,6 +128,10 @@ class RichReporter:
             settings.add_row("Configured HF model", plan.configured_model)
         settings.add_row("Image", plan.image)
         settings.add_row("Container", plan.container_name)
+        settings.add_row(
+            "Docker bind",
+            f"{plan.docker_bind_address}:{plan.host_port}",
+        )
         settings.add_row("Endpoint", plan.base_url)
         settings.add_row("Served model name", plan.served_model_name)
         settings.add_row(

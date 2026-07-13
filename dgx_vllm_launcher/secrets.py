@@ -18,11 +18,12 @@ class HuggingFaceTokenProvider:
         self._home_dir = Path.home() if home_dir is None else home_dir
 
     def get_hf_token(self) -> str | None:
-        env_token = self._env.get("HF_TOKEN") or self._env.get("HUGGING_FACE_HUB_TOKEN")
-        if env_token:
-            return env_token.strip() or None
+        for name in ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN"):
+            env_token = self._env.get(name, "").strip()
+            if env_token:
+                return env_token
 
-        configured_home = self._env.get("HF_HOME")
+        configured_home = self._env.get("HF_HOME", "").strip()
         candidate_roots = [
             Path(configured_home).expanduser() if configured_home else None,
             self._home_dir / ".cache" / "huggingface",

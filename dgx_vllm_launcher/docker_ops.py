@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import shlex
@@ -9,17 +10,26 @@ import shutil
 import subprocess
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
+from functools import cache
 from typing import NoReturn
 
+from .launcher import ContainerInspectionError, ContainerNotFoundError
 from .plan import LaunchPlan
 
 MANAGED_LABEL = "com.andrewkurin.dgx-vllm-launcher.managed"
 VARIANT_LABEL = "com.andrewkurin.dgx-vllm-launcher.variant"
+LAUNCH_INSTANCE_LABEL = "com.andrewkurin.dgx-vllm-launcher.launch-instance"
+_MISSING_CONTAINER_MARKERS = ("no such object", "no such container")
 
 _SECRET_ASSIGNMENT = re.compile(
     r"(?i)\b([A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD)[A-Z0-9_]*)="
     r"(?:'[^']*'|\"[^\"]*\"|[^\s]+)"
 )
+
+
+def _container_is_missing(stderr: str) -> bool:
+    normalized = stderr.lower()
+    return any(marker in normalized for marker in _MISSING_CONTAINER_MARKERS)
 
 
 def redact_command(command: list[str] | tuple[str, ...]) -> tuple[str, ...]:
@@ -58,7 +68,10 @@ class CommandResult:
     command: tuple[str, ...]
 
 
+@cache
 def has_sg() -> bool:
+    # TODO(remove backward-compat shim): Remove the `sg docker` fallback in v0.2.0
+    # after documenting direct Docker group/socket access as a prerequisite.
     return shutil.which("sg") is not None
 
 
@@ -131,7 +144,9 @@ def _python_package_setup_command(image: str, packages: tuple[str, ...]) -> str:
     for package in packages:
         name, separator, version = package.partition("==")
         if not separator or not name or not version:
-            raise ValueError(f"startup Python package must be exactly pinned: {package!r}")
+            raise ValueError(
+                f"startup Python package must be exactly pinned: {package!r}"
+            )
         expected[name] = version
 
     cache_key = hashlib.sha256(
@@ -173,9 +188,13 @@ def _python_package_setup_command(image: str, packages: tuple[str, ...]) -> str:
 def build_start_command(
     plan: LaunchPlan,
     *,
+    launch_id: str,
     include_hf_token: bool = False,
 ) -> list[str]:
     """Build a Docker command without embedding secret values."""
+
+    if not launch_id:
+        raise ValueError("launch_id must not be empty")
 
     command = [
         "docker",
@@ -184,13 +203,15 @@ def build_start_command(
         "--gpus",
         "all",
         "-p",
-        f"{plan.host_port}:{plan.container_port}",
+        f"{plan.docker_bind_address}:{plan.host_port}:{plan.container_port}",
         "--name",
         plan.container_name,
         "--label",
         f"{MANAGED_LABEL}=true",
         "--label",
         f"{VARIANT_LABEL}={plan.variant}",
+        "--label",
+        f"{LAUNCH_INSTANCE_LABEL}={launch_id}",
         "--ipc=host",
     ]
 
@@ -256,7 +277,10 @@ class DockerLogStream:
                 os.killpg(self._process.pid, signal.SIGKILL)
             except ProcessLookupError:
                 return
-            self._process.wait(timeout=2)
+            try:
+                self._process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                return
 
 
 class DockerRuntime:
@@ -293,35 +317,140 @@ class DockerRuntime:
         )
         if result.returncode == 0:
             return True
-        missing_markers = ("no such object", "no such container")
-        if any(marker in result.stderr.lower() for marker in missing_markers):
+        if _container_is_missing(result.stderr):
             return False
         _raise_result_error("Could not inspect Docker container", result)
 
-    def container_is_managed(self, name: str) -> bool:
+    def container_id(self, name: str) -> str | None:
         result = run_docker(
             [
                 "docker",
                 "inspect",
                 name,
                 "--format",
-                f'{{{{ index .Config.Labels "{MANAGED_LABEL}" }}}}',
+                "{{.Id}}",
+            ],
+            check=False,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            container_id = result.stdout.strip()
+            if container_id:
+                return container_id
+            raise ContainerInspectionError(
+                f"Docker returned an empty ID while inspecting {name}"
+            )
+        if _container_is_missing(result.stderr):
+            return None
+        _raise_result_error("Could not inspect Docker container ID", result)
+
+    def container_is_managed(
+        self,
+        container: str,
+        *,
+        launch_id: str | None = None,
+    ) -> bool:
+        result = run_docker(
+            [
+                "docker",
+                "inspect",
+                container,
+                "--format",
+                "{{json .Config.Labels}}",
             ],
             check=False,
             timeout=10,
         )
         if result.returncode != 0:
             _raise_result_error("Could not inspect Docker container labels", result)
-        return result.stdout.strip() == "true"
+        try:
+            labels = json.loads(result.stdout)
+        except json.JSONDecodeError as exc:
+            raise ContainerInspectionError(
+                f"Docker returned invalid container labels for {container}"
+            ) from exc
+        if not isinstance(labels, dict):
+            return False
+        if labels.get(MANAGED_LABEL) != "true":
+            return False
+        return launch_id is None or labels.get(LAUNCH_INSTANCE_LABEL) == launch_id
 
-    def container_running(self, name: str, *, timeout: float) -> bool:
-        result = run_docker(
-            ["docker", "inspect", name, "--format", "{{.State.Running}}"],
-            timeout=max(timeout, 0.1),
+    def container_running(self, container: str, *, timeout: float) -> bool:
+        try:
+            result = run_docker(
+                [
+                    "docker",
+                    "inspect",
+                    container,
+                    "--format",
+                    "{{.State.Running}}",
+                ],
+                timeout=max(timeout, 0.1),
+            )
+        except DockerCommandError as exc:
+            if _container_is_missing(exc.stderr):
+                raise ContainerNotFoundError(
+                    f"Docker container {container} no longer exists"
+                ) from exc
+            raise ContainerInspectionError(str(exc)) from exc
+        running = result.stdout.strip()
+        if running == "true":
+            return True
+        if running == "false":
+            return False
+        raise ContainerInspectionError(
+            f"Docker returned invalid running state for {container}: {running!r}"
         )
-        return result.stdout.strip() == "true"
 
-    def start(self, plan: LaunchPlan, *, hf_token: str | None) -> str:
+    def container_exit_code(
+        self,
+        container: str,
+        *,
+        timeout: float,
+    ) -> int | None:
+        try:
+            result = run_docker(
+                [
+                    "docker",
+                    "inspect",
+                    container,
+                    "--format",
+                    "{{json .State}}",
+                ],
+                timeout=max(timeout, 0.1),
+            )
+        except DockerCommandError as exc:
+            if _container_is_missing(exc.stderr):
+                raise ContainerNotFoundError(
+                    f"Docker container {container} no longer exists"
+                ) from exc
+            raise ContainerInspectionError(str(exc)) from exc
+        try:
+            state = json.loads(result.stdout)
+        except json.JSONDecodeError as exc:
+            raise ContainerInspectionError(
+                f"Docker returned invalid state for {container}"
+            ) from exc
+        if not isinstance(state, dict) or not isinstance(state.get("Running"), bool):
+            raise ContainerInspectionError(
+                f"Docker returned incomplete state for {container}"
+            )
+        if state["Running"]:
+            return None
+        exit_code = state.get("ExitCode")
+        if isinstance(exit_code, bool) or not isinstance(exit_code, int):
+            raise ContainerInspectionError(
+                f"Docker returned an invalid exit code for {container}"
+            )
+        return exit_code
+
+    def start(
+        self,
+        plan: LaunchPlan,
+        *,
+        hf_token: str | None,
+        launch_id: str,
+    ) -> str:
         if plan.requires_hf_token and not hf_token:
             raise ValueError("an HF token is required by this launch plan")
 
@@ -333,6 +462,7 @@ class DockerRuntime:
 
         command = build_start_command(
             plan,
+            launch_id=launch_id,
             include_hf_token=include_hf_token,
         )
         result = run_docker(command, env=process_env)

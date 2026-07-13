@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import signal
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 
 import pytest
 
@@ -10,6 +10,8 @@ from dgx_vllm_launcher.cli import LaunchArgs
 from dgx_vllm_launcher.config import VariantProfile
 from dgx_vllm_launcher.http_ops import HttpResult
 from dgx_vllm_launcher.launcher import (
+    ContainerInspectionError,
+    ContainerNotFoundError,
     LaunchError,
     Launcher,
     ReadinessError,
@@ -21,15 +23,28 @@ from dgx_vllm_launcher.plan import LaunchPlan
 
 
 class FakeLogStream:
-    def __init__(self, *, lines: Iterable[str] = (), returncode: int = 0) -> None:
+    def __init__(
+        self,
+        *,
+        lines: Iterable[str] = (),
+        returncode: int = 0,
+        wait_error: BaseException | None = None,
+        on_wait: Callable[[], None] | None = None,
+    ) -> None:
         self._lines = tuple(lines)
         self._returncode = returncode
+        self._wait_error = wait_error
+        self._on_wait = on_wait
         self.closed = False
 
     def lines(self) -> Iterable[str]:
         return iter(self._lines)
 
     def wait(self) -> int:
+        if self._on_wait is not None:
+            self._on_wait()
+        if self._wait_error is not None:
+            raise self._wait_error
         return self._returncode
 
     def close(self) -> None:
@@ -43,42 +58,111 @@ class FakeRuntime:
         exists: bool = False,
         managed: bool = True,
         running: bool = True,
-        foreground_returncode: int = 0,
+        actual_exit_code: int = 0,
+        running_results: Iterable[bool | Exception] = (),
         prepare_error: Exception | None = None,
         start_error_after_create: Exception | None = None,
+        log_wait_error: BaseException | None = None,
+        on_log_wait: Callable[[], None] | None = None,
     ) -> None:
-        self.exists = exists
-        self.managed = managed
-        self.running = running
-        self.foreground_returncode = foreground_returncode
+        self._containers: dict[str, dict[str, object]] = {}
+        self._named_container_id: str | None = None
+        if exists:
+            self._named_container_id = "existing-id"
+            self._containers["existing-id"] = {
+                "managed": managed,
+                "launch_id": None,
+                "running": running,
+            }
+        self._default_managed = managed
+        self._default_running = running
+        self.actual_exit_code = actual_exit_code
+        self.running_results = list(running_results)
         self.prepare_error = prepare_error
         self.start_error_after_create = start_error_after_create
+        self.log_wait_error = log_wait_error
+        self.on_log_wait = on_log_wait
         self.started_hf_token: str | None = None
+        self.started_launch_id: str | None = None
         self.events: list[str] = []
         self.log_streams: list[FakeLogStream] = []
+
+    @property
+    def exists(self) -> bool:
+        return self._named_container_id in self._containers
+
+    @property
+    def running(self) -> bool:
+        if self._named_container_id is None:
+            return False
+        container = self._containers.get(self._named_container_id)
+        return bool(container and container["running"])
 
     def prepare(self, plan: LaunchPlan) -> None:
         self.events.append("prepare")
         if self.prepare_error:
             raise self.prepare_error
 
-    def container_exists(self, name: str) -> bool:
-        self.events.append("exists")
-        return self.exists
+    def container_id(self, name: str) -> str | None:
+        self.events.append("container-id")
+        return self._named_container_id if self.exists else None
 
-    def container_is_managed(self, name: str) -> bool:
+    def container_is_managed(
+        self,
+        container: str,
+        *,
+        launch_id: str | None = None,
+    ) -> bool:
         self.events.append("managed")
-        return self.managed
+        details = self._containers.get(container)
+        return bool(
+            details
+            and details["managed"]
+            and (launch_id is None or details["launch_id"] == launch_id)
+        )
 
-    def container_running(self, name: str, *, timeout: float) -> bool:
+    def container_running(self, container: str, *, timeout: float) -> bool:
         self.events.append(f"running:{timeout:g}")
-        return self.running
+        if self.running_results:
+            result = self.running_results.pop(0)
+            if isinstance(result, Exception):
+                raise result
+            return result
+        details = self._containers.get(container)
+        if details is not None:
+            return bool(details["running"])
+        return self._default_running
 
-    def start(self, plan: LaunchPlan, *, hf_token: str | None) -> str:
+    def container_exit_code(
+        self,
+        container: str,
+        *,
+        timeout: float,
+    ) -> int | None:
+        self.events.append(f"exit-code:{timeout:g}")
+        details = self._containers.get(container)
+        if details is None:
+            raise ContainerInspectionError("container no longer exists")
+        if details["running"]:
+            return None
+        return self.actual_exit_code
+
+    def start(
+        self,
+        plan: LaunchPlan,
+        *,
+        hf_token: str | None,
+        launch_id: str,
+    ) -> str:
         self.events.append("start")
         self.started_hf_token = hf_token
-        self.exists = True
-        self.running = True
+        self.started_launch_id = launch_id
+        self._named_container_id = "container-id"
+        self._containers["container-id"] = {
+            "managed": self._default_managed,
+            "launch_id": launch_id,
+            "running": True,
+        }
         if self.start_error_after_create:
             raise self.start_error_after_create
         return "container-id"
@@ -89,11 +173,14 @@ class FakeRuntime:
 
     def stop(self, name: str) -> None:
         self.events.append("stop")
-        self.running = False
+        if name in self._containers:
+            self._containers[name]["running"] = False
 
     def remove(self, name: str) -> None:
         self.events.append("remove")
-        self.exists = False
+        self._containers.pop(name, None)
+        if self._named_container_id == name:
+            self._named_container_id = None
 
     def open_logs(
         self,
@@ -103,7 +190,17 @@ class FakeRuntime:
         tail: int | None = None,
     ) -> FakeLogStream:
         self.events.append(f"open-logs:{capture_output}:{tail}")
-        stream = FakeLogStream(returncode=self.foreground_returncode)
+
+        def on_wait() -> None:
+            if self.on_log_wait is not None:
+                self.on_log_wait()
+            if self.log_wait_error is None and name in self._containers:
+                self._containers[name]["running"] = False
+
+        stream = FakeLogStream(
+            wait_error=self.log_wait_error,
+            on_wait=on_wait,
+        )
         self.log_streams.append(stream)
         return stream
 
@@ -112,7 +209,7 @@ class FakeClient:
     def __init__(
         self,
         *,
-        health: Iterable[bool] = (True,),
+        health: Iterable[bool | BaseException] = (True,),
         completions: Iterable[HttpResult] = (),
     ) -> None:
         self._health = list(health)
@@ -123,7 +220,10 @@ class FakeClient:
     def health(self, *, timeout: float) -> bool:
         self.health_timeouts.append(timeout)
         if self._health:
-            return self._health.pop(0)
+            result = self._health.pop(0)
+            if isinstance(result, BaseException):
+                raise result
+            return result
         return False
 
     def completion(
@@ -252,6 +352,65 @@ def test_health_reports_container_exit(make_plan):
     assert result.reason == "container exited before becoming ready"
 
 
+def test_health_retries_transient_container_inspection_failure(make_plan):
+    plan = make_plan(env_overrides={"VLLM_READY_TIMEOUT": "3"})
+    runtime = FakeRuntime(
+        running_results=(ContainerInspectionError("daemon temporarily busy"), True)
+    )
+    reporter = FakeReporter()
+    clock = FakeClock()
+
+    result = wait_for_health(
+        plan,
+        runtime=runtime,
+        client=FakeClient(health=(True,)),
+        reporter=reporter,
+        clock=clock,
+    )
+
+    assert result.ok is True
+    assert clock.sleeps == [1.0]
+    assert any(
+        "daemon temporarily busy" in message
+        for level, message in reporter.messages
+        if level == "warning"
+    )
+
+
+def test_health_fails_immediately_when_started_container_disappears(make_plan):
+    runtime = FakeRuntime(
+        running_results=(ContainerNotFoundError("container no longer exists"),)
+    )
+    clock = FakeClock()
+
+    result = wait_for_health(
+        make_plan(),
+        runtime=runtime,
+        client=FakeClient(),
+        reporter=FakeReporter(),
+        clock=clock,
+    )
+
+    assert result.ok is False
+    assert result.reason == "container disappeared before becoming ready"
+    assert clock.sleeps == []
+
+
+def test_health_does_not_treat_single_restart_transition_as_exit(make_plan):
+    plan = make_plan(env_overrides={"VLLM_READY_TIMEOUT": "3"})
+    runtime = FakeRuntime(running_results=(False, True))
+
+    result = wait_for_health(
+        plan,
+        runtime=runtime,
+        client=FakeClient(health=(True,)),
+        reporter=FakeReporter(),
+        clock=FakeClock(),
+    )
+
+    assert result.ok is True
+
+
 def test_public_fp8_model_can_launch_without_hf_token(make_plan):
     plan = make_plan(
         "qwen36-fp8",
@@ -309,6 +468,27 @@ def test_optional_token_can_be_absent_for_hosted_variant(make_plan):
 
     assert code == 0
     assert runtime.started_hf_token is None
+
+
+def test_launch_prepares_isolated_hf_cache_subdirectories(make_plan):
+    plan = make_plan(
+        "qwen36-nvfp4",
+        detach=True,
+        no_warmup=True,
+        no_smoke_check=True,
+    )
+    hf_mounts = [
+        mount
+        for mount in plan.mounts
+        if mount.container_path.startswith("/root/.cache/huggingface/")
+    ]
+
+    code = _launcher(FakeRuntime(), FakeClient(), FakeReporter()).launch(plan)
+
+    assert code == 0
+    assert {mount.host_path.name for mount in hf_mounts} == {"hub", "xet"}
+    assert all(mount.host_path.is_dir() for mount in hf_mounts)
+    assert all(not (mount.host_path.parent / "token").exists() for mount in hf_mounts)
 
 
 def test_preloaded_model_bypasses_optional_token(make_plan, tmp_path):
@@ -395,6 +575,24 @@ def test_unmanaged_container_is_never_removed(make_plan):
     assert runtime.exists is True
 
 
+def test_launch_health_failure_reports_startup_logs_and_cleans_container(make_plan):
+    plan = make_plan(
+        detach=True,
+        no_warmup=True,
+        no_smoke_check=True,
+        env_overrides={"VLLM_READY_TIMEOUT": "3"},
+    )
+    runtime = FakeRuntime(running_results=(False, False, False))
+    reporter = FakeReporter()
+
+    with pytest.raises(ReadinessError, match="exited before becoming ready"):
+        _launcher(runtime, FakeClient(), reporter, clock=FakeClock()).launch(plan)
+
+    assert ("startup-logs", "startup logs") in reporter.messages
+    assert runtime.exists is False
+    assert "remove" in runtime.events
+
+
 def test_failed_smoke_check_fails_launch_and_cleans_container(make_plan):
     plan = make_plan(detach=True, no_warmup=True)
     runtime = FakeRuntime()
@@ -442,15 +640,103 @@ def test_failed_start_cleans_residual_managed_container(make_plan):
     assert "remove" in runtime.events
 
 
+def test_failed_start_does_not_clean_up_replacement_from_another_launch(make_plan):
+    plan = make_plan(detach=True, no_warmup=True, no_smoke_check=True)
+
+    class ReplacementRuntime(FakeRuntime):
+        def start(
+            self,
+            plan: LaunchPlan,
+            *,
+            hf_token: str | None,
+            launch_id: str,
+        ) -> str:
+            started_id = super().start(
+                plan,
+                hf_token=hf_token,
+                launch_id=launch_id,
+            )
+            self._containers.pop(started_id)
+            self._named_container_id = "replacement-id"
+            self._containers["replacement-id"] = {
+                "managed": True,
+                "launch_id": "new-launch",
+                "running": True,
+            }
+            raise RuntimeError("lost docker response")
+
+    runtime = ReplacementRuntime()
+
+    with pytest.raises(RuntimeError, match="lost docker response"):
+        _launcher(runtime, FakeClient(), FakeReporter()).launch(plan)
+
+    assert runtime.container_id(plan.container_name) == "replacement-id"
+    assert runtime.running is True
+    assert "remove" not in runtime.events
+
+
+def test_stale_foreground_launch_does_not_clean_up_replacement(make_plan):
+    plan = make_plan(no_warmup=True, no_smoke_check=True)
+    runtime = FakeRuntime()
+
+    def replace_container() -> None:
+        runtime._containers.pop("container-id")
+        runtime._named_container_id = "replacement-id"
+        runtime._containers["replacement-id"] = {
+            "managed": True,
+            "launch_id": "new-launch",
+            "running": True,
+        }
+
+    runtime.on_log_wait = replace_container
+
+    with pytest.raises(ContainerInspectionError, match="no longer exists"):
+        _launcher(runtime, FakeClient(), FakeReporter()).launch(plan)
+
+    assert runtime.container_id(plan.container_name) == "replacement-id"
+    assert runtime.running is True
+    assert "remove" not in runtime.events
+
+
 def test_foreground_exit_code_is_returned_and_container_is_cleaned(make_plan):
     plan = make_plan(no_warmup=True, no_smoke_check=True)
-    runtime = FakeRuntime(foreground_returncode=7)
+    runtime = FakeRuntime(actual_exit_code=7)
 
     code = _launcher(runtime, FakeClient(), FakeReporter()).launch(plan)
 
     assert code == 7
     assert runtime.exists is False
     assert runtime.log_streams[-1].closed is True
+
+
+@pytest.mark.parametrize("interrupt_stage", ["health", "logs"])
+def test_interrupt_cleans_exact_launch_and_orchestrator_returns_130(
+    make_plan,
+    monkeypatch,
+    interrupt_stage,
+):
+    plan = make_plan(no_warmup=True, no_smoke_check=True)
+    runtime = FakeRuntime(
+        log_wait_error=KeyboardInterrupt() if interrupt_stage == "logs" else None
+    )
+    client = FakeClient(
+        health=(KeyboardInterrupt(),) if interrupt_stage == "health" else (True,)
+    )
+    reporter = FakeReporter()
+    monkeypatch.setattr(orchestrator, "resolve_launch_plan", lambda *_args: plan)
+
+    code = orchestrator.run(
+        LaunchArgs(variant=plan.variant),
+        runtime=runtime,
+        reporter=reporter,
+        client_factory=lambda _base_url: client,
+    )
+
+    assert code == 130
+    assert runtime.exists is False
+    assert "stop" in runtime.events
+    assert "remove" in runtime.events
+    assert ("warning", "Interrupted. Exiting...") in reporter.messages
 
 
 def test_warmup_and_smoke_write_artifacts(make_plan):

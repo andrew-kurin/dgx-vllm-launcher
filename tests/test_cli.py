@@ -3,11 +3,13 @@ from __future__ import annotations
 import pytest
 
 from dgx_vllm_launcher import cli
+from dgx_vllm_launcher.plan import LaunchArgs
 
 
 def test_parse_args_defaults():
     args = cli.parse_args(["qwen36-fp8"])
 
+    assert isinstance(args, LaunchArgs)
     assert args.variant == "qwen36-fp8"
     assert args.reasoning is False
     assert args.no_warmup is False

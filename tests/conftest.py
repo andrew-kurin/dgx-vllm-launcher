@@ -6,9 +6,8 @@ from typing import Any
 
 import pytest
 
-from dgx_vllm_launcher.cli import LaunchArgs
 from dgx_vllm_launcher.config import Variant
-from dgx_vllm_launcher.plan import LaunchPlan, resolve_launch_plan
+from dgx_vllm_launcher.plan import LaunchArgs, LaunchPlan, resolve_launch_plan
 
 PlanFactory = Callable[..., LaunchPlan]
 

@@ -23,7 +23,8 @@ The launcher provides:
 - Health polling against a real monotonic deadline
 - Required warmup and smoke checks when enabled
 - Safe secret forwarding without putting tokens in Docker command arguments
-- Managed-container labels, collision protection, and foreground cleanup
+- Loopback-only API publishing by default, with an explicit bind-address override
+- Per-launch container identity, collision protection, and foreground cleanup
 
 ## Quick start
 
@@ -70,7 +71,7 @@ An optional token can be supplied for authenticated download rate limits:
 HF_TOKEN=... uv run dvl qwen36-fp8 --reasoning
 ```
 
-The launcher checks `HF_TOKEN`, `HUGGING_FACE_HUB_TOKEN`, `HF_HOME/token`, `~/.cache/huggingface/token`, and `~/.huggingface/token`. Tokens are passed through the Docker child-process environment and are never embedded in the Docker command line.
+The launcher checks `HF_TOKEN`, `HUGGING_FACE_HUB_TOKEN`, `HF_HOME/token`, `~/.cache/huggingface/token`, and `~/.huggingface/token`. Tokens are passed through the Docker child-process environment and are never embedded in the Docker command line. The host token file is not mounted into the container; only the Hugging Face `hub` and `xet` cache subdirectories are persisted.
 
 ## Command-line usage
 
@@ -139,7 +140,7 @@ Before replacing a service, the launcher:
 4. Verifies the Docker daemon and pulls a missing image.
 5. Checks that an existing same-name container is managed by this launcher.
 
-Containers carry a management label. A same-name container without that label is never removed automatically; rename or remove it explicitly. Containers created by older launcher versions do not have the label and therefore require one explicit cleanup.
+Containers carry management and per-launch identity labels. Cleanup verifies that identity before stopping or removing anything, so an older foreground process cannot destroy a replacement container started under the same name. A same-name container without the management label is never removed automatically; rename or remove it explicitly. Containers created by older launcher versions do not have the label and therefore require one explicit cleanup.
 
 After startup:
 
@@ -172,16 +173,17 @@ docker stop vllm-qwen36-nvfp4
 
 - `VLLM_READY_TIMEOUT` — positive readiness timeout in seconds; default `10800` (3 hours)
 - `VLLM_WARMUP_REQUESTS` — nonnegative warmup count; default `2`
+- `VLLM_BIND_ADDRESS` — IP address on which Docker publishes the API; default `127.0.0.1`. Set `0.0.0.0` or `::` only for deliberate network exposure.
 - `VLLM_HOST_PORT` — host port mapped to container port 8000; default `8000`
 - `VLLM_CACHE_DIR` — host vLLM/TorchInductor cache; default `~/.cache/vllm`
-- `VLLM_HF_CACHE_DIR` — persisted Hugging Face cache; defaults to `HF_HOME` or `~/.cache/huggingface`
+- `VLLM_HF_CACHE_DIR` — Hugging Face cache root; its `hub` and `xet` subdirectories are persisted, while credentials remain on the host. Defaults to nonempty `HF_HOME` or `~/.cache/huggingface`.
 - `VLLM_ARTIFACT_DIR` — warmup and smoke response output; default `/tmp`
 - `VLLM_PRELOADED_MODELS_DIR` — preloaded checkpoint root; default `~/models`
 
 ### Images
 
-- `VLLM_IMAGE_FP8` — Qwen FP8 image override
-- `VLLM_IMAGE_NVFP4` — Qwen NVFP4 image override
+- `VLLM_IMAGE_QWEN36_FP8` — Qwen FP8 image override
+- `VLLM_IMAGE_QWEN36_NVFP4` — Qwen NVFP4 image override
 - `VLLM_IMAGE_GEMMA4_NVFP4` — Gemma NVFP4 image override
 - `VLLM_IMAGE_ORNITH_NVFP4` — Ornith NVFP4 image override
 - `VLLM_IMAGE_MISTRAL4_NVFP4` — Mistral Small 4 NVFP4 image override
@@ -189,12 +191,13 @@ docker stop vllm-qwen36-nvfp4
 - `VLLM_IMAGE_NEMOTRON3_NANO_OMNI_NVFP4` — Nemotron 3 Nano Omni NVFP4 image override
 
 All profiles use the immutable vLLM image digest pinned in `dgx_vllm_launcher/config.py`.
+The legacy Qwen overrides `VLLM_IMAGE_FP8` and `VLLM_IMAGE_NVFP4` remain accepted through v0.1.x; the canonical names above take precedence when both are set.
 
 ### vLLM and container tuning
 
 - `VLLM_SAFETENSORS_LOAD_STRATEGY` — default `lazy`; applies to profiles using vLLM's standard safetensors loader
-- `VLLM_MARLIN_USE_ATOMIC_ADD` — default `1`
-- `VLLM_ENABLE_INDUCTOR_MAX_AUTOTUNE` — default `1`
+- `VLLM_MARLIN_USE_ATOMIC_ADD` — `0` or `1`; default `1`
+- `VLLM_ENABLE_INDUCTOR_MAX_AUTOTUNE` — `0` or `1`; default `1`
 
 Use `--linear-backend` and `--moe-backend` for explicit kernel selection. Qwen NVFP4, DiffusionGemma, and Nemotron Omni use `fastsafetensors`, so the standard safetensors strategy does not apply to those profiles.
 

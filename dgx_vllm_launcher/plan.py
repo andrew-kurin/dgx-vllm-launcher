@@ -177,9 +177,17 @@ def _optional_backend(value: str | None, option: str) -> str | None:
     return value
 
 
+def _resolve_allow_missing(path: Path) -> Path:
+    try:
+        return path.resolve(strict=True)
+    except FileNotFoundError:
+        # Cache and mount directories may be created after the plan is resolved.
+        return path.resolve()
+
+
 def _resolved_path(raw_path: str, *, setting: str) -> Path:
     try:
-        return Path(raw_path).expanduser().resolve()
+        return _resolve_allow_missing(Path(raw_path).expanduser())
     except (OSError, RuntimeError) as exc:
         raise ConfigurationError(
             f"{setting} path could not be resolved: {raw_path!r}: {exc}"
@@ -197,7 +205,7 @@ def _preloaded_candidate(
         candidate = candidate.expanduser()
         if not candidate.is_absolute():
             candidate = root / candidate
-        return candidate.resolve()
+        return _resolve_allow_missing(candidate)
     except (OSError, RuntimeError) as exc:
         raise ConfigurationError(
             f"preloaded model candidate under {root_setting} could not be resolved: "

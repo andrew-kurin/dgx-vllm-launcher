@@ -31,7 +31,6 @@ def build_vllm_args(
         str(runtime_defaults.max_num_seqs),
         "--max-num-batched-tokens",
         str(runtime_defaults.max_num_batched_tokens),
-        "--enable-prefix-caching",
         "--enable-flashinfer-autotune",
         "--generation-config",
         "vllm",
@@ -39,6 +38,12 @@ def build_vllm_args(
         "--served-model-name",
         served_model_name,
     ]
+
+    args.append(
+        "--enable-prefix-caching"
+        if runtime_defaults.enable_prefix_caching
+        else "--no-enable-prefix-caching"
+    )
 
     if runtime_defaults.load_format:
         args.extend(["--load-format", runtime_defaults.load_format])

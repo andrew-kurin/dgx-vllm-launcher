@@ -10,6 +10,7 @@ from dgx_vllm_launcher.config import (
     DEFAULT_READY_TIMEOUT,
     DEFAULT_VLLM_IMAGE,
     HuggingFaceModel,
+    QWEN36_27B_DFLASH_VLLM_IMAGE,
     VARIANTS,
     VARIANT_PROFILES,
     Variant,
@@ -44,6 +45,16 @@ def test_default_images_are_pinned_by_digest():
             "qwen36-nvfp4",
             "VLLM_IMAGE_QWEN36_NVFP4",
             "VLLM_IMAGE_NVFP4",
+        ),
+        (
+            "qwen36-27b-nvfp4",
+            "VLLM_IMAGE_QWEN36_27B_NVFP4",
+            None,
+        ),
+        (
+            "qwen36-27b-nvfp4-dflash",
+            "VLLM_IMAGE_QWEN36_27B_NVFP4_DFLASH",
+            None,
         ),
         ("gemma4-nvfp4", "VLLM_IMAGE_GEMMA4_NVFP4", None),
         ("ornith-nvfp4", "VLLM_IMAGE_ORNITH_NVFP4", None),
@@ -123,6 +134,8 @@ def test_invalid_static_profile_limits_are_rejected_at_construction():
 def test_profiles_preserve_latest_model_and_runtime_defaults():
     fp8 = VARIANT_PROFILES["qwen36-fp8"]
     qwen_nvfp4 = VARIANT_PROFILES["qwen36-nvfp4"]
+    qwen_27b_nvfp4 = VARIANT_PROFILES["qwen36-27b-nvfp4"]
+    qwen_27b_dflash = VARIANT_PROFILES["qwen36-27b-nvfp4-dflash"]
     gemma = VARIANT_PROFILES["gemma4-nvfp4"]
     ornith = VARIANT_PROFILES["ornith-nvfp4"]
     mistral = VARIANT_PROFILES["mistral4-nvfp4"]
@@ -143,6 +156,21 @@ def test_profiles_preserve_latest_model_and_runtime_defaults():
     assert qwen_nvfp4.runtime_defaults.gpu_memory_utilization == 0.4
     assert qwen_nvfp4.runtime_defaults.load_format == "fastsafetensors"
     assert qwen_nvfp4.source.preloaded is not None
+    assert qwen_27b_nvfp4.model == "nvidia/Qwen3.6-27B-NVFP4"
+    assert qwen_27b_nvfp4.default_image == DEFAULT_VLLM_IMAGE
+    assert qwen_27b_nvfp4.default_moe_backend is None
+    assert qwen_27b_nvfp4.quantization is None
+    assert qwen_27b_nvfp4.source.token_policy == "optional"
+    assert qwen_27b_nvfp4.source.preloaded is not None
+    assert qwen_27b_nvfp4.runtime_defaults.enable_prefix_caching is False
+    assert qwen_27b_dflash.model == "nvidia/Qwen3.6-27B-NVFP4"
+    assert qwen_27b_dflash.default_image == QWEN36_27B_DFLASH_VLLM_IMAGE
+    assert qwen_27b_dflash.default_moe_backend is None
+    assert qwen_27b_dflash.quantization is None
+    assert qwen_27b_dflash.source.token_policy == "optional"
+    assert qwen_27b_dflash.source.preloaded is None
+    assert qwen_27b_dflash.runtime_defaults.gpu_memory_utilization == 0.5
+    assert qwen_27b_dflash.runtime_defaults.enable_prefix_caching is False
     assert gemma.default_moe_backend is None
     assert gemma.quantization == "modelopt_fp4"
     assert gemma.runtime_defaults.reasoning_parser == "gemma4"
@@ -408,6 +436,78 @@ def test_plan_uses_dgx_spark_qwen_nvfp4_arguments(make_plan):
     )
 
 
+def test_plan_uses_single_spark_qwen36_27b_nvfp4_arguments(make_plan):
+    plan = make_plan("qwen36-27b-nvfp4", reasoning=True)
+
+    assert plan.model == "nvidia/Qwen3.6-27B-NVFP4"
+    assert plan.image == DEFAULT_VLLM_IMAGE
+    assert _argument_value(plan.vllm_args, "--gpu-memory-utilization") == "0.4"
+    assert _argument_value(plan.vllm_args, "--max-model-len") == "131072"
+    assert _argument_value(plan.vllm_args, "--max-num-seqs") == "4"
+    assert _argument_value(plan.vllm_args, "--max-num-batched-tokens") == "8192"
+    assert _argument_value(plan.vllm_args, "--load-format") == "fastsafetensors"
+    assert _argument_value(plan.vllm_args, "--reasoning-parser") == "qwen3"
+    assert _argument_value(plan.vllm_args, "--tool-call-parser") == "qwen3_coder"
+    assert _argument_value(plan.vllm_args, "--speculative-config") == (
+        '{"method":"mtp","num_speculative_tokens":2}'
+    )
+    assert "--enable-chunked-prefill" in plan.vllm_args
+    assert "--async-scheduling" in plan.vllm_args
+    assert "--enable-prefix-caching" not in plan.vllm_args
+    assert "--no-enable-prefix-caching" in plan.vllm_args
+    assert "--kv-cache-dtype" not in plan.vllm_args
+    assert "--attention-backend" not in plan.vllm_args
+    assert "--quantization" not in plan.vllm_args
+    assert "--moe-backend" not in plan.vllm_args
+    assert ("VLLM_USE_V2_MODEL_RUNNER", "1") not in plan.container_env
+
+
+def test_plan_uses_experimental_qwen36_27b_dflash_arguments(make_plan):
+    plan = make_plan("qwen36-27b-nvfp4-dflash", reasoning=True)
+
+    assert plan.model == "nvidia/Qwen3.6-27B-NVFP4"
+    assert plan.image == QWEN36_27B_DFLASH_VLLM_IMAGE
+    assert _argument_value(plan.vllm_args, "--gpu-memory-utilization") == "0.5"
+    assert _argument_value(plan.vllm_args, "--max-model-len") == "65536"
+    assert _argument_value(plan.vllm_args, "--max-num-seqs") == "4"
+    assert _argument_value(plan.vllm_args, "--max-num-batched-tokens") == "8208"
+    assert _argument_value(plan.vllm_args, "--load-format") == "fastsafetensors"
+    assert _argument_value(plan.vllm_args, "--kv-cache-dtype") == "bfloat16"
+    assert _argument_value(plan.vllm_args, "--attention-backend") == "flash_attn"
+    assert _argument_value(plan.vllm_args, "--reasoning-parser") == "qwen3"
+    assert _argument_value(plan.vllm_args, "--tool-call-parser") == "qwen3_coder"
+    assert _argument_value(plan.vllm_args, "--speculative-config") == (
+        '{"method":"dflash","model":"z-lab/Qwen3.6-27B-DFlash",'
+        '"num_speculative_tokens":5}'
+    )
+    assert "--language-model-only" in plan.vllm_args
+    assert "--enable-chunked-prefill" in plan.vllm_args
+    assert "--enforce-eager" in plan.vllm_args
+    assert "--enable-prefix-caching" not in plan.vllm_args
+    assert "--no-enable-prefix-caching" in plan.vllm_args
+    assert "--async-scheduling" not in plan.vllm_args
+    assert "--quantization" not in plan.vllm_args
+    assert "--moe-backend" not in plan.vllm_args
+    assert ("VLLM_USE_V2_MODEL_RUNNER", "1") in plan.container_env
+
+
+def test_profile_prefix_caching_is_emitted_conditionally(make_plan):
+    assert "--enable-prefix-caching" in make_plan("qwen36-fp8").vllm_args
+    assert "--no-enable-prefix-caching" not in make_plan("qwen36-fp8").vllm_args
+    assert "--enable-prefix-caching" not in make_plan(
+        "qwen36-27b-nvfp4"
+    ).vllm_args
+    assert "--no-enable-prefix-caching" in make_plan(
+        "qwen36-27b-nvfp4"
+    ).vllm_args
+    assert "--enable-prefix-caching" not in make_plan(
+        "qwen36-27b-nvfp4-dflash"
+    ).vllm_args
+    assert "--no-enable-prefix-caching" in make_plan(
+        "qwen36-27b-nvfp4-dflash"
+    ).vllm_args
+
+
 def test_plan_uses_dgx_spark_fp8_arguments(make_plan):
     plan = make_plan("qwen36-fp8", reasoning=True)
 
@@ -581,6 +681,8 @@ def test_diffusion_parser_defaults_do_not_change_other_profiles(make_plan):
     for variant in (
         "qwen36-fp8",
         "qwen36-nvfp4",
+        "qwen36-27b-nvfp4",
+        "qwen36-27b-nvfp4-dflash",
         "gemma4-nvfp4",
         "ornith-nvfp4",
         "mistral4-nvfp4",

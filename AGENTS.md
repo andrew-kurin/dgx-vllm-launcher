@@ -21,6 +21,8 @@ uv run dgx-vllm-launcher qwen36-fp8
 # short command + explicit variant
 uv run dvl qwen36-fp8
 uv run dvl qwen36-nvfp4
+uv run dvl qwen36-27b-nvfp4
+uv run dvl qwen36-27b-nvfp4-dflash
 uv run dvl gemma4-nvfp4
 uv run dvl ornith-nvfp4
 ```

@@ -7,6 +7,8 @@ from typing import Literal
 Variant = Literal[
     "qwen36-fp8",
     "qwen36-nvfp4",
+    "qwen36-27b-nvfp4",
+    "qwen36-27b-nvfp4-dflash",
     "gemma4-nvfp4",
     "ornith-nvfp4",
     "mistral4-nvfp4",
@@ -16,6 +18,7 @@ Variant = Literal[
 TokenPolicy = Literal["none", "optional", "required"]
 
 DEFAULT_VLLM_IMAGE = "vllm/vllm-openai@sha256:7feb2a09304e3b2d38e224a100316e84fe3205faa7605060609e2c02179cbca6"
+QWEN36_27B_DFLASH_VLLM_IMAGE = "vllm/vllm-openai@sha256:157f859297f61fc14b77ae6d9b3dded58f57983f35724b2d05391883e3dbb17c"
 
 DEFAULT_READY_TIMEOUT = 10800
 DEFAULT_VLLM_CACHE_DIR = "~/.cache/vllm"
@@ -65,6 +68,7 @@ class VariantRuntimeDefaults:
     load_format: str | None = None
     tuned_config_subdir: str | None = None
     container_env: tuple[tuple[str, str], ...] = ()
+    enable_prefix_caching: bool = True
     always_enable_parsers: bool = False
     extra_vllm_args: tuple[str, ...] = ()
     reasoning_vllm_args: tuple[str, ...] = ()
@@ -177,6 +181,56 @@ QWEN_NVFP4_RUNTIME_DEFAULTS = VariantRuntimeDefaults(
         "--async-scheduling",
         "--speculative-config",
         '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}',
+    ),
+)
+
+QWEN36_27B_NVFP4_RUNTIME_DEFAULTS = VariantRuntimeDefaults(
+    reasoning_parser="qwen3",
+    tool_call_parser="qwen3_coder",
+    gpu_memory_utilization=0.4,
+    load_format="fastsafetensors",
+    # TODO(re-enable hybrid prefix caching): Re-test after vLLM PR #47861 lands
+    # in the pinned image and remove this override once cache-hit tool use and
+    # long-context retrieval are verified on GB10. Target: first post-fix pin.
+    enable_prefix_caching=False,
+    extra_vllm_args=(
+        "--enable-chunked-prefill",
+        "--async-scheduling",
+        "--speculative-config",
+        '{"method":"mtp","num_speculative_tokens":2}',
+    ),
+)
+
+QWEN36_27B_DFLASH_RUNTIME_DEFAULTS = VariantRuntimeDefaults(
+    reasoning_parser="qwen3",
+    tool_call_parser="qwen3_coder",
+    # Model Runner V2 plus the hybrid draft model needs more profiling and KV
+    # headroom than the native-MTP path. On GB10, 0.4 left only 1.3 GiB for KV;
+    # 0.5 preserves the 64K context target without consuming the full device.
+    gpu_memory_utilization=0.5,
+    max_model_len=65536,
+    # vLLM reserves 4 * (K5 - 1) draft slots from this scheduler budget.
+    max_num_batched_tokens=8208,
+    load_format="fastsafetensors",
+    container_env=(("VLLM_USE_V2_MODEL_RUNNER", "1"),),
+    # TODO(re-enable hybrid prefix caching): Re-test after vLLM PR #47861 lands
+    # in the pinned image and remove this override once DFlash cache-hit paths
+    # are stable on GB10. Target: first post-fix pin.
+    enable_prefix_caching=False,
+    extra_vllm_args=(
+        "--kv-cache-dtype",
+        "bfloat16",
+        "--attention-backend",
+        "flash_attn",
+        "--language-model-only",
+        "--enable-chunked-prefill",
+        # TODO(re-enable CUDA graphs): Remove eager execution only after vLLM
+        # PR #46324 and issue #48234 are both resolved in the pinned image and
+        # a sustained NVFP4+DFlash GB10 run is clean. Target: first post-fix pin.
+        "--enforce-eager",
+        "--speculative-config",
+        '{"method":"dflash","model":"z-lab/Qwen3.6-27B-DFlash",'
+        '"num_speculative_tokens":5}',
     ),
 )
 
@@ -322,6 +376,24 @@ VARIANT_PROFILES: dict[Variant, VariantProfile] = {
         runtime_defaults=QWEN_NVFP4_RUNTIME_DEFAULTS,
         quantization="modelopt_fp4",
         legacy_image_env_var="VLLM_IMAGE_NVFP4",
+    ),
+    "qwen36-27b-nvfp4": VariantProfile(
+        variant="qwen36-27b-nvfp4",
+        source=_model_source(
+            "nvidia/Qwen3.6-27B-NVFP4",
+            token_policy="optional",
+            preloaded=True,
+        ),
+        runtime_defaults=QWEN36_27B_NVFP4_RUNTIME_DEFAULTS,
+    ),
+    "qwen36-27b-nvfp4-dflash": VariantProfile(
+        variant="qwen36-27b-nvfp4-dflash",
+        source=_model_source(
+            "nvidia/Qwen3.6-27B-NVFP4",
+            token_policy="optional",
+        ),
+        runtime_defaults=QWEN36_27B_DFLASH_RUNTIME_DEFAULTS,
+        default_image=QWEN36_27B_DFLASH_VLLM_IMAGE,
     ),
     "gemma4-nvfp4": VariantProfile(
         variant="gemma4-nvfp4",

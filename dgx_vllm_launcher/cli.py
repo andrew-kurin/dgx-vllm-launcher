@@ -83,7 +83,7 @@ def parse_args(argv: list[str] | None = None) -> LaunchArgs:
     parser.add_argument(
         "--show-defaults",
         action="store_true",
-        help="Print recommended per-variant launch settings and exit",
+        help="Print configured per-variant launch settings and exit",
     )
 
     ns = parser.parse_args(argv)

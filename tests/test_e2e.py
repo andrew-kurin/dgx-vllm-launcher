@@ -70,6 +70,22 @@ def test_installed_launcher_entrypoints_render_defaults(
     assert "qwen36-fp8" in output
 
 
+def test_launcher_help_describes_configured_profiles() -> None:
+    completed = subprocess.run(
+        [str(SCRIPTS_DIR / "dvl"), "--help"],
+        cwd=PROJECT_ROOT,
+        env=_launcher_env(),
+        text=True,
+        capture_output=True,
+        timeout=10,
+        check=False,
+    )
+
+    output = completed.stdout + completed.stderr
+    assert completed.returncode == 0, output
+    assert "Print configured per-variant launch settings and exit" in output
+
+
 def test_config_error_entrypoint_exits_cleanly_without_docker() -> None:
     env = _launcher_env()
     env["PATH"] = ""

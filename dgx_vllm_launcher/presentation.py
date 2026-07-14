@@ -167,7 +167,7 @@ class RichReporter:
 
     def show_defaults(self, profiles: Iterable[VariantProfile]) -> None:
         table = Table(title="Default launch configuration", box=box.ROUNDED)
-        table.add_column("Variant", style="cyan")
+        table.add_column("Variant", style="cyan", no_wrap=True)
         table.add_column("Model", style="magenta")
         table.add_column("MoE backend", style="yellow")
         table.add_column("Linear backend", style="yellow")
@@ -178,9 +178,9 @@ class RichReporter:
                 profile.model,
                 profile.default_moe_backend or "(none)",
                 profile.default_linear_backend or "(none)",
-                profile.quantization or "(none)",
+                profile.quantization or "(auto)",
             )
-        self.console.print(Panel(table, title="Recommended defaults", expand=False))
+        self.console.print(Panel(table, title="Available profiles", expand=False))
 
     def info(self, message: str) -> None:
         self.console.print(Text(message, style="blue"))

@@ -99,6 +99,17 @@ def test_parse_args_accepts_nemotron3_nano_omni_nvfp4_variant():
     assert args.reasoning is True
 
 
+@pytest.mark.parametrize(
+    "variant",
+    ("qwen36-27b-nvfp4", "qwen36-27b-nvfp4-dflash"),
+)
+def test_parse_args_accepts_qwen36_27b_variants(variant):
+    args = cli.parse_args([variant, "--reasoning"])
+
+    assert args.variant == variant
+    assert args.reasoning is True
+
+
 def test_parse_args_show_defaults_without_variant():
     args = cli.parse_args(["--show-defaults"])
 

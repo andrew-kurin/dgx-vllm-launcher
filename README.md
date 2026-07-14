@@ -8,11 +8,17 @@ A validated Docker launcher for serving supported FP8 and NVFP4 models with vLLM
 | --- | --- | --- | --- |
 | `qwen36-fp8` | `Qwen/Qwen3.6-35B-A3B-FP8` | — | `triton` |
 | `qwen36-nvfp4` | `nvidia/Qwen3.6-35B-A3B-NVFP4` | `Qwen3.6-35B-A3B-NVFP4` | `marlin` |
+| `qwen36-27b-nvfp4` | `nvidia/Qwen3.6-27B-NVFP4` | `Qwen3.6-27B-NVFP4` | `(none)` |
+| `qwen36-27b-nvfp4-dflash` **(experimental)** | `nvidia/Qwen3.6-27B-NVFP4` | — | `(none)` |
 | `gemma4-nvfp4` | `nvidia/Gemma-4-26B-A4B-NVFP4` | `Gemma-4-26B-A4B-NVFP4` | `(none)` |
 | `ornith-nvfp4` | `sakamakismile/Ornith-1.0-35B-NVFP4` | `Ornith-1.0-35B-NVFP4` | `(none)` |
 | `mistral4-nvfp4` | `mistralai/Mistral-Small-4-119B-2603-NVFP4` | `Mistral-Small-4-119B-2603-NVFP4` | `(none)` |
 | `diffusion-gemma-nvfp4` | `nvidia/diffusiongemma-26B-A4B-it-NVFP4` | `diffusiongemma-26B-A4B-it-NVFP4` | `(none)` |
 | `nemotron3-nano-omni-nvfp4` | `nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-NVFP4` | `Nemotron-3-Nano-Omni-30B-A3B-Reasoning-NVFP4` | `(none)` |
+
+The DFlash variant is an experimental comparison profile built around a
+third-party drafter that is still under development. Use the native-MTP variant
+as the default Qwen 3.6 27B path.
 
 The launcher provides:
 
@@ -34,6 +40,9 @@ uv sync --group dev
 
 uv run dvl qwen36-fp8
 uv run dvl qwen36-nvfp4
+uv run dvl qwen36-27b-nvfp4
+# Experimental comparison mode
+uv run dvl qwen36-27b-nvfp4-dflash
 uv run dvl gemma4-nvfp4
 uv run dvl ornith-nvfp4
 uv run dvl mistral4-nvfp4
@@ -63,7 +72,10 @@ uv run dvl --show-defaults
 
 ## Authentication
 
-All default model repositories are public and ungated. Qwen FP8, Gemma, DiffusionGemma, Nemotron, Ornith, and Mistral use a Hugging Face token when one is available but can run anonymously. Qwen NVFP4 does not request token injection by default.
+All default model repositories are public and ungated. Qwen FP8, Qwen 27B,
+Gemma, DiffusionGemma, Nemotron, Ornith, and Mistral use a Hugging Face token
+when one is available but can run anonymously. Qwen 35B NVFP4 does not request
+token injection by default.
 
 An optional token can be supplied for authenticated download rate limits:
 
@@ -96,9 +108,12 @@ Arguments:
 - `-R, --restart-policy <policy>` — one of `no`, `always`, `unless-stopped`, `on-failure`, or `on-failure:<retries>`
 - `--use-preloaded-models` — use the profile's local checkpoint when present; otherwise warn and use Hugging Face
 - `--preloaded-models-dir <path>` — override `VLLM_PRELOADED_MODELS_DIR` or the default `~/models`
-- `--show-defaults` — print every recommended profile and exit; no variant is required
+- `--show-defaults` — print every configured profile and exit; no variant is required
 
-Prefix caching is always enabled.
+Prefix caching is profile-driven. It remains enabled by default. Native MTP
+temporarily disables it pending [vLLM PR #47861](https://github.com/vllm-project/vllm/pull/47861),
+while experimental DFlash disables it independently pending GB10 revalidation
+of [vLLM issue #42084](https://github.com/vllm-project/vllm/issues/42084).
 
 Reasoning configuration is profile-driven:
 
@@ -114,6 +129,7 @@ Hosted models remain the default. To prefer a local checkpoint:
 
 ```bash
 uv run dvl qwen36-nvfp4 --use-preloaded-models
+uv run dvl qwen36-27b-nvfp4 --use-preloaded-models
 uv run dvl gemma4-nvfp4 --use-preloaded-models
 uv run dvl ornith-nvfp4 --use-preloaded-models
 uv run dvl mistral4-nvfp4 --use-preloaded-models
@@ -128,7 +144,7 @@ VLLM_PRELOADED_MODELS_DIR=/opt/models uv run dvl gemma4-nvfp4 --use-preloaded-mo
 uv run dvl gemma4-nvfp4 --use-preloaded-models --preloaded-models-dir /opt/models
 ```
 
-When the expected directory exists, it is mounted read-only at `/model`. If it is missing, the launcher emits a warning and uses the configured Hugging Face model ID. A selected preloaded Gemma, DiffusionGemma, Nemotron, Ornith, or Mistral model does not receive an optional HF token.
+When the expected directory exists, it is mounted read-only at `/model`. If it is missing, the launcher emits a warning and uses the configured Hugging Face model ID. A selected preloaded Qwen 27B, Gemma, DiffusionGemma, Nemotron, Ornith, or Mistral model does not receive an optional HF token.
 
 ## Startup and cleanup behavior
 
@@ -183,14 +199,19 @@ docker stop vllm-qwen36-nvfp4
 ### Images
 
 - `VLLM_IMAGE_QWEN36_FP8` — Qwen FP8 image override
-- `VLLM_IMAGE_QWEN36_NVFP4` — Qwen NVFP4 image override
+- `VLLM_IMAGE_QWEN36_NVFP4` — Qwen 35B NVFP4 image override
+- `VLLM_IMAGE_QWEN36_27B_NVFP4` — Qwen 27B native-MTP image override
+- `VLLM_IMAGE_QWEN36_27B_NVFP4_DFLASH` — Qwen 27B DFlash image override
 - `VLLM_IMAGE_GEMMA4_NVFP4` — Gemma NVFP4 image override
 - `VLLM_IMAGE_ORNITH_NVFP4` — Ornith NVFP4 image override
 - `VLLM_IMAGE_MISTRAL4_NVFP4` — Mistral Small 4 NVFP4 image override
 - `VLLM_IMAGE_DIFFUSION_GEMMA_NVFP4` — DiffusionGemma NVFP4 image override
 - `VLLM_IMAGE_NEMOTRON3_NANO_OMNI_NVFP4` — Nemotron 3 Nano Omni NVFP4 image override
 
-All profiles use the immutable vLLM image digest pinned in `dgx_vllm_launcher/config.py`.
+Every profile uses an immutable vLLM image digest pinned in
+`dgx_vllm_launcher/config.py`. Most share the validated default image; the Qwen
+27B DFlash profile uses a newer, separately pinned image containing hybrid
+sliding/full-attention DFlash support.
 The legacy Qwen overrides `VLLM_IMAGE_FP8` and `VLLM_IMAGE_NVFP4` remain accepted through v0.1.x; the canonical names above take precedence when both are set.
 
 ### vLLM and container tuning
@@ -220,7 +241,7 @@ Qwen FP8 disables unsupported DeepGEMM paths on GB10, uses Triton MoE, and enabl
 
 The tuned file is hardware-, shape-, and runtime-specific. Its filename limits automatic selection to `NVIDIA_GB10`, E=256/N=512, FP8 block-128 experts; re-tune and revalidate it when changing the image, Triton version, tensor-parallel size, or checkpoint architecture.
 
-Qwen NVFP4 follows NVIDIA's DGX Spark recipe while retaining the launcher's 128K context limit:
+Qwen 35B NVFP4 follows NVIDIA's DGX Spark recipe while retaining the launcher's 128K context limit:
 
 - NVIDIA's `nvidia/Qwen3.6-35B-A3B-NVFP4` checkpoint with vLLM's `modelopt_fp4` quantizer
 - `--gpu-memory-utilization 0.4`
@@ -232,7 +253,80 @@ Qwen NVFP4 follows NVIDIA's DGX Spark recipe while retaining the launcher's 128K
 
 A separate GB10 tune of the NVFP4 profile's BF16 Triton MTP-drafter MoE kernel was not retained. Although isolated kernels improved 2–8%, the complete server regressed C4 decode and prefill; the target model's Marlin experts were unaffected. The drafter therefore continues to use vLLM's default Triton configuration.
 
-Qwen NVFP4, Gemma 4, and DiffusionGemma use vLLM's `modelopt_fp4` quantizer. Nemotron Omni uses `modelopt_mixed` because its routed experts are NVFP4 while Mamba, attention, and shared-expert layers use FP8. Ornith and Mistral use their checkpoints' declared `compressed-tensors` quantization format and leave MoE backend selection on automatic.
+Qwen 35B NVFP4, Gemma 4, and DiffusionGemma use vLLM's `modelopt_fp4` quantizer. Nemotron Omni uses `modelopt_mixed` because its routed experts are NVFP4 while Mamba, attention, and shared-expert layers use FP8. Ornith and Mistral use their checkpoints' declared `compressed-tensors` quantization format and leave MoE backend selection on automatic. Qwen 27B omits an explicit quantizer so vLLM can auto-detect the checkpoint's mixed FP8/NVFP4 ModelOpt configuration.
+
+### Qwen 3.6 27B dense notes
+
+`qwen36-27b-nvfp4` serves NVIDIA's mixed-precision dense checkpoint on one DGX
+Spark. vLLM auto-detects its ModelOpt format: transformer MLP linears use NVFP4,
+attention and Gated DeltaNet linears use FP8, and the native MTP head remains
+BF16. The profile keeps multimodal input enabled, uses a 128K context limit,
+automatic KV-cache selection, chunked prefill, and two native MTP speculative
+steps. The model contains one MTP layer, so the second step reruns it. A matched
+GB10 comparison retained two steps because they improved both single-request
+and concurrency-four end-to-end output throughput; a third step added less than
+2% and did not justify its lower acceptance.
+
+Matched GB10 measurements on the pinned image, with prefix caching disabled and
+256 deterministic output tokens per request:
+
+| Proposer | 2,315-token prompt, C1 | 9,227-token prompt, C4 | Draft acceptance |
+| --- | ---: | ---: | ---: |
+| None | 11.09 tok/s | 18.12 tok/s | — |
+| MTP1 | 16.60 tok/s | 20.92 tok/s | 85.8% |
+| MTP2 | 21.03 tok/s | 21.57 tok/s | 73.3% |
+| MTP3 | 21.34 tok/s | 21.66 tok/s | about 58% |
+
+MTP2 improves C1 end-to-end output throughput by about 90% and C4 aggregate
+output throughput by about 19% over no speculation in this workload. Mean TTFT
+increased from 2.07s to 2.22s at C1 and from 27.10s to 29.92s at C4. Automatic
+tool choice and exact recovery-code retrieval at 18,473 prompt tokens passed.
+Forced `tool_choice: "required"` is not validated on this image: it reproduced
+[the upstream speculative-decoding/grammar failure](https://github.com/vllm-project/vllm/issues/46249),
+while `tool_choice: "auto"` worked correctly. A native image-chat smoke test
+also identified a generated solid-red image correctly.
+
+`qwen36-27b-nvfp4-dflash` is experimental. It pairs the same target with the
+public [`z-lab/Qwen3.6-27B-DFlash`](https://huggingface.co/z-lab/Qwen3.6-27B-DFlash)
+drafter, which the publisher documents against the BF16 Qwen target rather than
+NVIDIA's quantized target and describes as still under development. The profile
+is intended for comparison and validation, not as the default 27B launch path.
+It uses a July 14 vLLM nightly with Model Runner V2, FlashAttention, BF16 KV
+cache, five speculative tokens, a 64K context limit, text-only mode, and eager
+execution. A `0.50` memory target measured 12.90 GiB of KV cache, or 154,219
+tokens and 2.35 full 64K requests. Its 8,208-token scheduler budget leaves 8,192
+target-token slots after vLLM reserves the K5 draft slots.
+
+The DFlash K search used the same prompts and output lengths as the native-MTP
+comparison:
+
+| Proposer | 2,315-token prompt, C1 | 9,227-token prompt, C4 | Mean TTFT, C1 / C4 | Draft acceptance |
+| --- | ---: | ---: | ---: | ---: |
+| Native MTP2 | 21.03 tok/s | 21.57 tok/s | 2.22s / 29.92s | 73.3% |
+| DFlash K3 | 17.33 tok/s | 18.94 tok/s | 2.61s / 32.78s | 50.7% |
+| DFlash K5 | 22.40 tok/s | 18.80 tok/s | 2.62s / 32.97s | 39.4% |
+
+K5 is retained because it was 29% faster than K3 at C1 for less than a 1% C4
+loss. It beat native MTP2 by about 7% at C1, but was 13% slower at C4; native
+MTP2 is therefore the better general default. DFlash automatic tool choice and
+exact recovery-code retrieval at 18,473 prompt tokens passed. Its reasoning
+parser works, but this Model Runner V2 image does not support the per-request
+`thinking_token_budget` parameter.
+
+Native MTP keeps prefix caching disabled pending
+[vLLM PR #47861](https://github.com/vllm-project/vllm/pull/47861). DFlash keeps
+it disabled separately: landing that MTP fix is not sufficient to re-enable the
+DFlash path without retesting
+[vLLM issue #42084](https://github.com/vllm-project/vllm/issues/42084) on GB10.
+Eager execution should remain enabled until both the SM120/SM121
+[piecewise-CUDA-graph fix](https://github.com/vllm-project/vllm/pull/46324) and
+the [NVFP4+DFlash compilation crash](https://github.com/vllm-project/vllm/issues/48234)
+are resolved in the pinned image and sustained GB10 testing passes.
+
+MTP and DFlash are alternative vLLM proposer methods and cannot be stacked in
+one engine. Use the two variants to compare them. Do not raise DFlash to its
+published 15-token setting on Spark without retesting: an upstream Spark report
+found K=5 stable while K>=10 combined with prefix caching crashed.
 
 ## Mistral Small 4 notes
 

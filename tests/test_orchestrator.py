@@ -909,6 +909,8 @@ def test_orchestrator_show_defaults_does_not_compose_runtime():
     assert {profile.variant for profile in reporter.default_profiles} == {
         "qwen36-fp8",
         "qwen36-nvfp4",
+        "qwen36-27b-nvfp4",
+        "qwen36-27b-nvfp4-dflash",
         "gemma4-nvfp4",
         "ornith-nvfp4",
         "mistral4-nvfp4",

@@ -70,12 +70,34 @@ def test_default_profiles_include_latest_variant_settings():
 
     rendered = output.getvalue()
     assert "nvidia/Qwen3.6-35B-A3B-NVFP4" in rendered
+    assert "qwen36-27b-nvfp4" in rendered
+    assert "qwen36-27b-nvfp4-dflash" in rendered
+    assert "nvidia/Qwen3.6-27B-NVFP4" in rendered
     assert "marlin" in rendered
     assert "nvidia/Gemma-4-26B-A4B-NVFP4" in rendered
     assert "nvidia/diffusiongemma-26B-A4B-it-NVFP4" in rendered
     assert (
         "nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-NVFP4" in rendered
     )
+    assert "Available profiles" in rendered
+    assert "Recommended defaults" not in rendered
+    assert rendered.count("(auto)") == sum(
+        profile.quantization is None for profile in VARIANT_PROFILES.values()
+    )
+
+
+def test_default_profile_variants_remain_distinguishable_at_80_columns():
+    output = StringIO()
+    reporter = RichReporter(
+        Console(file=output, color_system=None, force_terminal=False, width=80)
+    )
+
+    reporter.show_defaults(VARIANT_PROFILES.values())
+
+    rendered = output.getvalue()
+    assert rendered.count("qwen36-27b-nvfp4") == 2
+    assert "qwen36-27b-nvfp4-dflash" in rendered
+    assert "qwen36-27b-…" not in rendered
 
 
 def test_container_logs_are_rendered_as_text_not_rich_markup():

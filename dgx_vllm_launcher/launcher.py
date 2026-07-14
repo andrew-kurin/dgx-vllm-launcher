@@ -206,7 +206,11 @@ class Launcher:
                     raise ReadinessError("; ".join(smoke.failures))
 
             if plan.detach:
-                self._verify_detached_container(container_id, launch_id=launch_id)
+                self._verify_detached_container(
+                    container_id,
+                    name=plan.container_name,
+                    launch_id=launch_id,
+                )
                 cleanup_container = False
                 self._reporter.success(
                     "Startup checks passed; container is running in detached mode."
@@ -293,7 +297,13 @@ class Launcher:
         except ContainerNotFoundError:
             return
 
-    def _verify_detached_container(self, container_id: str, *, launch_id: str) -> None:
+    def _verify_detached_container(
+        self,
+        container_id: str,
+        *,
+        name: str,
+        launch_id: str,
+    ) -> None:
         try:
             owned = self._runtime.container_is_managed(
                 container_id,
@@ -305,6 +315,11 @@ class Launcher:
                 )
             if not self._runtime.container_running(container_id, timeout=10):
                 raise ReadinessError("started container stopped during startup checks")
+            if self._runtime.container_id(name) != container_id:
+                raise ReadinessError(
+                    "started container no longer owns its expected name during "
+                    "startup checks"
+                )
         except ContainerNotFoundError as exc:
             raise ReadinessError(
                 "started container was replaced during startup checks"

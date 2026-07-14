@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import signal
 from collections.abc import Callable, Iterable, Mapping
+from typing import cast
 
 import pytest
 
 import dgx_vllm_launcher.orchestrator as orchestrator
 from dgx_vllm_launcher.cli import LaunchArgs
-from dgx_vllm_launcher.config import VariantProfile
+from dgx_vllm_launcher.config import Variant, VariantProfile
 from dgx_vllm_launcher.http_ops import HttpResult
 from dgx_vllm_launcher.launcher import (
     ContainerInspectionError,
@@ -774,6 +775,31 @@ def test_detached_launch_rejects_replacement_during_successful_health_check(
     )
 
 
+def test_detached_launch_rejects_name_reassignment_while_original_still_runs(
+    make_plan,
+):
+    plan = make_plan(detach=True, no_warmup=True, no_smoke_check=True)
+    runtime = FakeRuntime()
+
+    class RenamingClient(FakeClient):
+        def health(self, *, timeout: float) -> bool:
+            result = super().health(timeout=timeout)
+            runtime._named_container_id = "replacement-id"
+            runtime._containers["replacement-id"] = {
+                "managed": True,
+                "launch_id": "new-launch",
+                "running": True,
+            }
+            return result
+
+    with pytest.raises(ReadinessError, match="no longer owns its expected name"):
+        _launcher(runtime, RenamingClient(), FakeReporter()).launch(plan)
+
+    assert "container-id" not in runtime._containers
+    assert runtime.container_id(plan.container_name) == "replacement-id"
+    assert runtime.running is True
+
+
 def test_stale_foreground_launch_does_not_clean_up_replacement(make_plan):
     plan = make_plan(no_warmup=True, no_smoke_check=True)
     runtime = FakeRuntime()
@@ -906,6 +932,24 @@ def test_orchestrator_catches_configuration_errors_before_composition():
     assert runtime.events == []
     assert reporter.messages[-1][0] == "error"
     assert "VLLM_READY_TIMEOUT" in reporter.messages[-1][1]
+
+
+def test_orchestrator_reports_unsupported_programmatic_variant():
+    runtime = FakeRuntime()
+    reporter = FakeReporter()
+
+    code = orchestrator.run(
+        LaunchArgs(variant=cast(Variant, "unsupported")),
+        env={},
+        runtime=runtime,
+        reporter=reporter,
+    )
+
+    assert code == 1
+    assert runtime.events == []
+    assert reporter.messages == [
+        ("error", "Error: unsupported variant: unsupported")
+    ]
 
 
 def test_cli_signal_handlers_restore_process_handlers():

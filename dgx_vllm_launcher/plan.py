@@ -336,7 +336,10 @@ def resolve_launch_plan(
     env = os.environ if env is None else env
     if args.variant is None:
         raise ConfigurationError("variant is required for a launch")
-    profile = resolve_variant_profile(args.variant)
+    try:
+        profile = resolve_variant_profile(args.variant)
+    except ValueError as exc:
+        raise ConfigurationError(str(exc)) from exc
     if args.reasoning:
         _validate_reasoning_profile(profile)
 

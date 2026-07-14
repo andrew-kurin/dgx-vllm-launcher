@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Literal
 
@@ -14,33 +15,7 @@ Variant = Literal[
 ]
 TokenPolicy = Literal["none", "optional", "required"]
 
-MODEL_BASE = "Qwen/Qwen3.6-35B-A3B"
-QWEN_NVFP4_HF_MODEL = "nvidia/Qwen3.6-35B-A3B-NVFP4"
-GEMMA4_MODEL = "nvidia/Gemma-4-26B-A4B-NVFP4"
-ORNITH_MODEL = "sakamakismile/Ornith-1.0-35B-NVFP4"
-MISTRAL4_MODEL = "mistralai/Mistral-Small-4-119B-2603-NVFP4"
-DIFFUSION_GEMMA_MODEL = "nvidia/diffusiongemma-26B-A4B-it-NVFP4"
-NEMOTRON3_NANO_OMNI_MODEL = (
-    "nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-NVFP4"
-)
-
-QWEN_LOCAL_NVFP4_PATH = "Qwen3.6-35B-A3B-NVFP4"
-GEMMA4_LOCAL_NVFP4_PATH = "Gemma-4-26B-A4B-NVFP4"
-ORNITH_LOCAL_NVFP4_PATH = "Ornith-1.0-35B-NVFP4"
-MISTRAL4_LOCAL_NVFP4_PATH = "Mistral-Small-4-119B-2603-NVFP4"
-DIFFUSION_GEMMA_LOCAL_NVFP4_PATH = "diffusiongemma-26B-A4B-it-NVFP4"
-NEMOTRON3_NANO_OMNI_LOCAL_NVFP4_PATH = (
-    "Nemotron-3-Nano-Omni-30B-A3B-Reasoning-NVFP4"
-)
-
 DEFAULT_VLLM_IMAGE = "vllm/vllm-openai@sha256:7feb2a09304e3b2d38e224a100316e84fe3205faa7605060609e2c02179cbca6"
-DEFAULT_FP8_IMAGE = DEFAULT_VLLM_IMAGE
-DEFAULT_NVFP4_IMAGE = DEFAULT_VLLM_IMAGE
-DEFAULT_GEMMA4_NVFP4_IMAGE = DEFAULT_VLLM_IMAGE
-DEFAULT_ORNITH_NVFP4_IMAGE = DEFAULT_VLLM_IMAGE
-DEFAULT_MISTRAL4_NVFP4_IMAGE = DEFAULT_VLLM_IMAGE
-DEFAULT_DIFFUSION_GEMMA_NVFP4_IMAGE = DEFAULT_VLLM_IMAGE
-DEFAULT_NEMOTRON3_NANO_OMNI_NVFP4_IMAGE = DEFAULT_VLLM_IMAGE
 
 DEFAULT_READY_TIMEOUT = 10800
 DEFAULT_VLLM_CACHE_DIR = "~/.cache/vllm"
@@ -51,11 +26,15 @@ DEFAULT_ARTIFACT_DIR = "/tmp"
 MISTRAL4_KV_CACHE_BYTES = 14 * 1024**3
 DEFAULT_PRELOADED_MODELS_DIR = "~/models"
 DEFAULT_HOST_PORT = 8000
+DEFAULT_BIND_ADDRESS = "127.0.0.1"
 CONTAINER_PORT = 8000
 DEFAULT_GPU_MEMORY_UTILIZATION = 0.7
 DEFAULT_MAX_MODEL_LEN = 131072
 DEFAULT_MAX_NUM_SEQS = 4
 DEFAULT_MAX_NUM_BATCHED_TOKENS = 8192
+_EXACT_PYTHON_PACKAGE = re.compile(
+    r"[A-Za-z0-9][A-Za-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9._+!-]*"
+)
 
 
 @dataclass(frozen=True)
@@ -92,6 +71,31 @@ class VariantRuntimeDefaults:
     non_reasoning_vllm_args: tuple[str, ...] = ()
     startup_python_packages: tuple[str, ...] = ()
 
+    def __post_init__(self) -> None:
+        if not 0 < self.gpu_memory_utilization <= 1:
+            raise ValueError(
+                "profile gpu_memory_utilization must be greater than 0 and at most 1"
+            )
+        if self.max_model_len <= 0:
+            raise ValueError("profile max_model_len must be positive")
+        if self.max_num_seqs <= 0:
+            raise ValueError("profile max_num_seqs must be positive")
+        if self.max_num_batched_tokens <= 0:
+            raise ValueError("profile max_num_batched_tokens must be positive")
+
+        seen: set[str] = set()
+        for package in self.startup_python_packages:
+            if not _EXACT_PYTHON_PACKAGE.fullmatch(package):
+                raise ValueError(
+                    f"profile startup Python package must be exactly pinned: {package!r}"
+                )
+            name = re.sub(r"[-_.]+", "-", package.partition("==")[0].lower())
+            if name in seen:
+                raise ValueError(
+                    f"profile startup Python package is duplicated: {package!r}"
+                )
+            seen.add(name)
+
 
 @dataclass(frozen=True)
 class VariantProfile:
@@ -99,12 +103,23 @@ class VariantProfile:
 
     variant: Variant
     source: HuggingFaceModel
-    image_env_var: str
-    default_image: str
-    served_model_name: str
-    startup_message: str
     runtime_defaults: VariantRuntimeDefaults
     quantization: str | None = None
+    legacy_image_env_var: str | None = None
+    default_image: str = DEFAULT_VLLM_IMAGE
+
+    @property
+    def image_env_var(self) -> str:
+        suffix = self.variant.upper().replace("-", "_")
+        return f"VLLM_IMAGE_{suffix}"
+
+    @property
+    def served_model_name(self) -> str:
+        return self.variant
+
+    @property
+    def startup_message(self) -> str:
+        return f"Serving {self.model} from Hugging Face..."
 
     @property
     def model(self) -> str:
@@ -117,6 +132,22 @@ class VariantProfile:
     @property
     def default_linear_backend(self) -> str | None:
         return self.runtime_defaults.linear_backend
+
+
+def _model_source(
+    model_id: str,
+    *,
+    token_policy: TokenPolicy = "none",
+    preloaded: bool = False,
+) -> HuggingFaceModel:
+    preloaded_model = None
+    if preloaded:
+        preloaded_model = PreloadedModel(model_id.rsplit("/", maxsplit=1)[-1])
+    return HuggingFaceModel(
+        model_id=model_id,
+        token_policy=token_policy,
+        preloaded=preloaded_model,
+    )
 
 
 QWEN_FP8_RUNTIME_DEFAULTS = VariantRuntimeDefaults(
@@ -275,97 +306,69 @@ MISTRAL4_RUNTIME_DEFAULTS = VariantRuntimeDefaults(
 VARIANT_PROFILES: dict[Variant, VariantProfile] = {
     "qwen36-fp8": VariantProfile(
         variant="qwen36-fp8",
-        source=HuggingFaceModel(
-            f"{MODEL_BASE}-FP8",
+        source=_model_source(
+            "Qwen/Qwen3.6-35B-A3B-FP8",
             token_policy="optional",
         ),
-        image_env_var="VLLM_IMAGE_FP8",
-        default_image=DEFAULT_FP8_IMAGE,
-        served_model_name="qwen36-fp8",
-        startup_message="Serving Qwen/Qwen3.6-35B-A3B-FP8 from Hugging Face...",
         runtime_defaults=QWEN_FP8_RUNTIME_DEFAULTS,
+        legacy_image_env_var="VLLM_IMAGE_FP8",
     ),
     "qwen36-nvfp4": VariantProfile(
         variant="qwen36-nvfp4",
-        source=HuggingFaceModel(
-            QWEN_NVFP4_HF_MODEL,
-            preloaded=PreloadedModel(QWEN_LOCAL_NVFP4_PATH),
+        source=_model_source(
+            "nvidia/Qwen3.6-35B-A3B-NVFP4",
+            preloaded=True,
         ),
-        image_env_var="VLLM_IMAGE_NVFP4",
-        default_image=DEFAULT_NVFP4_IMAGE,
-        served_model_name="qwen36-nvfp4",
-        startup_message="Serving nvidia/Qwen3.6-35B-A3B-NVFP4 from Hugging Face...",
         runtime_defaults=QWEN_NVFP4_RUNTIME_DEFAULTS,
         quantization="modelopt_fp4",
+        legacy_image_env_var="VLLM_IMAGE_NVFP4",
     ),
     "gemma4-nvfp4": VariantProfile(
         variant="gemma4-nvfp4",
-        source=HuggingFaceModel(
-            GEMMA4_MODEL,
+        source=_model_source(
+            "nvidia/Gemma-4-26B-A4B-NVFP4",
             token_policy="optional",
-            preloaded=PreloadedModel(GEMMA4_LOCAL_NVFP4_PATH),
+            preloaded=True,
         ),
-        image_env_var="VLLM_IMAGE_GEMMA4_NVFP4",
-        default_image=DEFAULT_GEMMA4_NVFP4_IMAGE,
-        served_model_name="gemma4-nvfp4",
-        startup_message="Serving Gemma 4 26B A4B-NVFP4 from Hugging Face...",
         runtime_defaults=GEMMA4_RUNTIME_DEFAULTS,
         quantization="modelopt_fp4",
     ),
     "ornith-nvfp4": VariantProfile(
         variant="ornith-nvfp4",
-        source=HuggingFaceModel(
-            ORNITH_MODEL,
+        source=_model_source(
+            "sakamakismile/Ornith-1.0-35B-NVFP4",
             token_policy="optional",
-            preloaded=PreloadedModel(ORNITH_LOCAL_NVFP4_PATH),
+            preloaded=True,
         ),
-        image_env_var="VLLM_IMAGE_ORNITH_NVFP4",
-        default_image=DEFAULT_ORNITH_NVFP4_IMAGE,
-        served_model_name="ornith-nvfp4",
-        startup_message="Serving Ornith 1.0 35B NVFP4 from Hugging Face...",
         runtime_defaults=ORNITH_RUNTIME_DEFAULTS,
         quantization="compressed-tensors",
     ),
     "mistral4-nvfp4": VariantProfile(
         variant="mistral4-nvfp4",
-        source=HuggingFaceModel(
-            MISTRAL4_MODEL,
+        source=_model_source(
+            "mistralai/Mistral-Small-4-119B-2603-NVFP4",
             token_policy="optional",
-            preloaded=PreloadedModel(MISTRAL4_LOCAL_NVFP4_PATH),
+            preloaded=True,
         ),
-        image_env_var="VLLM_IMAGE_MISTRAL4_NVFP4",
-        default_image=DEFAULT_MISTRAL4_NVFP4_IMAGE,
-        served_model_name="mistral4-nvfp4",
-        startup_message="Serving Mistral Small 4 119B A6B NVFP4 from Hugging Face...",
         runtime_defaults=MISTRAL4_RUNTIME_DEFAULTS,
         quantization="compressed-tensors",
     ),
     "diffusion-gemma-nvfp4": VariantProfile(
         variant="diffusion-gemma-nvfp4",
-        source=HuggingFaceModel(
-            DIFFUSION_GEMMA_MODEL,
+        source=_model_source(
+            "nvidia/diffusiongemma-26B-A4B-it-NVFP4",
             token_policy="optional",
-            preloaded=PreloadedModel(DIFFUSION_GEMMA_LOCAL_NVFP4_PATH),
+            preloaded=True,
         ),
-        image_env_var="VLLM_IMAGE_DIFFUSION_GEMMA_NVFP4",
-        default_image=DEFAULT_DIFFUSION_GEMMA_NVFP4_IMAGE,
-        served_model_name="diffusion-gemma-nvfp4",
-        startup_message="Serving DiffusionGemma 26B A4B NVFP4 from Hugging Face...",
         runtime_defaults=DIFFUSION_GEMMA_RUNTIME_DEFAULTS,
         quantization="modelopt_fp4",
     ),
     "nemotron3-nano-omni-nvfp4": VariantProfile(
         variant="nemotron3-nano-omni-nvfp4",
-        source=HuggingFaceModel(
-            NEMOTRON3_NANO_OMNI_MODEL,
+        source=_model_source(
+            "nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-NVFP4",
             token_policy="optional",
-            preloaded=PreloadedModel(NEMOTRON3_NANO_OMNI_LOCAL_NVFP4_PATH),
-        ),
-        image_env_var="VLLM_IMAGE_NEMOTRON3_NANO_OMNI_NVFP4",
-        default_image=DEFAULT_NEMOTRON3_NANO_OMNI_NVFP4_IMAGE,
-        served_model_name="nemotron3-nano-omni-nvfp4",
-        startup_message=(
-            "Serving Nemotron 3 Nano Omni 30B A3B NVFP4 from Hugging Face..."
+            preloaded=True,
         ),
         runtime_defaults=NEMOTRON3_NANO_OMNI_RUNTIME_DEFAULTS,
         quantization="modelopt_mixed",

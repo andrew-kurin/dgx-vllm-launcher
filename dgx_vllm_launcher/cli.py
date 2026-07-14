@@ -1,32 +1,16 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
 
-from .config import VARIANTS, Variant
-
-
-@dataclass(frozen=True)
-class LaunchArgs:
-    variant: Variant | None
-    reasoning: bool = False
-    no_warmup: bool = False
-    no_smoke_check: bool = False
-    detach: bool = False
-    moe_backend: str | None = None
-    linear_backend: str | None = None
-    restart_policy: str | None = None
-    use_preloaded_models: bool = False
-    preloaded_models_dir: str | None = None
-    show_defaults: bool = False
+from .config import VARIANTS
+# TODO(remove backward-compat LaunchArgs re-export): Remove this import from the
+# CLI namespace in v0.2.0 after callers migrate to dgx_vllm_launcher.plan.
+from .plan import LaunchArgs
 
 
 def parse_args(argv: list[str] | None = None) -> LaunchArgs:
     parser = argparse.ArgumentParser(
-        description=(
-            "Unified launcher for Qwen, Gemma, Ornith, Mistral, "
-            "DiffusionGemma, and Nemotron vLLM variants."
-        ),
+        description=f"Unified launcher for vLLM variants: {', '.join(VARIANTS)}.",
         formatter_class=argparse.RawTextHelpFormatter,
     )
     parser.add_argument(

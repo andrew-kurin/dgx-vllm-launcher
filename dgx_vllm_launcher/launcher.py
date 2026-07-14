@@ -5,6 +5,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
+from uuid import uuid4
 
 from .http_ops import HttpResult
 from .plan import LaunchPlan
@@ -12,6 +13,7 @@ from .presentation import BackgroundLogTailer, Reporter
 
 HEALTH_REQUEST_TIMEOUT_SECONDS = 2.0
 HEALTH_POLL_INTERVAL_SECONDS = 1.0
+HEALTH_EXIT_CONFIRMATIONS = 3
 COMPLETION_TIMEOUT_SECONDS = 120.0
 
 
@@ -23,6 +25,14 @@ class ReadinessError(LaunchError):
     """Raised when a started service fails a required readiness check."""
 
 
+class ContainerInspectionError(LaunchError):
+    """Raised when a container's state cannot be inspected reliably."""
+
+
+class ContainerNotFoundError(ContainerInspectionError):
+    """Raised when Docker confirms that a specific container no longer exists."""
+
+
 class RuntimeLogStream(Protocol):
     def lines(self) -> Iterable[str]: ...
 
@@ -32,15 +42,33 @@ class RuntimeLogStream(Protocol):
 
 
 class ContainerRuntime(Protocol):
-    def prepare(self, plan: LaunchPlan) -> None: ...
+    def prepare(self, plan: LaunchPlan) -> tuple[str, ...]: ...
 
-    def container_exists(self, name: str) -> bool: ...
+    def container_id(self, name: str) -> str | None: ...
 
-    def container_is_managed(self, name: str) -> bool: ...
+    def container_is_managed(
+        self,
+        container: str,
+        *,
+        launch_id: str | None = None,
+    ) -> bool: ...
 
-    def container_running(self, name: str, *, timeout: float) -> bool: ...
+    def container_running(self, container: str, *, timeout: float) -> bool: ...
 
-    def start(self, plan: LaunchPlan, *, hf_token: str | None) -> str: ...
+    def container_exit_code(
+        self,
+        container: str,
+        *,
+        timeout: float,
+    ) -> int | None: ...
+
+    def start(
+        self,
+        plan: LaunchPlan,
+        *,
+        hf_token: str | None,
+        launch_id: str,
+    ) -> str: ...
 
     def logs(self, name: str, *, tail: int = 200) -> str: ...
 
@@ -94,7 +122,6 @@ class HealthResult:
 
 @dataclass(frozen=True)
 class CheckResult:
-    name: str
     attempts: int
     failures: tuple[str, ...] = ()
 
@@ -128,14 +155,20 @@ class Launcher:
         for warning in plan.warnings:
             self._reporter.warning(warning)
         self._reporter.info("Validating Docker and preparing the image...")
-        self._runtime.prepare(plan)
+        for warning in self._runtime.prepare(plan):
+            self._reporter.warning(warning)
         self._replace_existing_container(plan.container_name)
 
-        launch_attempted = True
+        launch_id = uuid4().hex
+        container_id: str | None = None
         cleanup_container = True
         try:
             self._reporter.success(plan.startup_message)
-            container_id = self._runtime.start(plan, hf_token=hf_token)
+            container_id = self._runtime.start(
+                plan,
+                hf_token=hf_token,
+                launch_id=launch_id,
+            )
             self._reporter.success(
                 f"Started container {container_id} as {plan.container_name}"
             )
@@ -146,11 +179,10 @@ class Launcher:
                 client=self._client,
                 reporter=self._reporter,
                 clock=self._clock,
+                container=container_id,
             )
             if not health.ok:
-                self._reporter.startup_logs(
-                    self._runtime.logs(plan.container_name, tail=200)
-                )
+                self._reporter.startup_logs(self._runtime.logs(container_id, tail=200))
                 raise ReadinessError(health.reason or "health check failed")
 
             self._reporter.success(
@@ -174,6 +206,11 @@ class Launcher:
                     raise ReadinessError("; ".join(smoke.failures))
 
             if plan.detach:
+                self._verify_detached_container(
+                    container_id,
+                    name=plan.container_name,
+                    launch_id=launch_id,
+                )
                 cleanup_container = False
                 self._reporter.success(
                     "Startup checks passed; container is running in detached mode."
@@ -190,20 +227,30 @@ class Launcher:
                 "Streaming logs. Press Ctrl-C to stop; the container will be removed."
             )
             stream = self._runtime.open_logs(
-                plan.container_name,
+                container_id,
                 capture_output=False,
                 tail=20,
             )
             try:
-                return stream.wait()
+                stream.wait()
             finally:
                 stream.close()
-        except KeyboardInterrupt:
-            self._reporter.warning("Interrupted. Exiting...")
-            return 130
+            exit_code = self._runtime.container_exit_code(
+                container_id,
+                timeout=10,
+            )
+            if exit_code is None:
+                raise LaunchError(
+                    "Docker log stream ended while the container was still running"
+                )
+            return exit_code
         finally:
-            if launch_attempted and cleanup_container:
-                self._cleanup_managed_container(plan.container_name)
+            if cleanup_container:
+                self._cleanup_managed_container(
+                    plan.container_name,
+                    launch_id=launch_id,
+                    container_id=container_id,
+                )
 
     def _resolve_hf_token(self, plan: LaunchPlan) -> str | None:
         if not plan.inject_hf_token:
@@ -229,32 +276,80 @@ class Launcher:
                 raise LaunchError(f"configured path is not a directory: {path}")
 
     def _replace_existing_container(self, name: str) -> None:
-        if not self._runtime.container_exists(name):
+        container_id = self._runtime.container_id(name)
+        if container_id is None:
             return
-        if not self._runtime.container_is_managed(name):
+        try:
+            managed = self._runtime.container_is_managed(container_id)
+        except ContainerNotFoundError:
+            return
+        if not managed:
             raise LaunchError(
                 f"refusing to remove unmanaged container {name}; "
                 "rename or remove it explicitly"
             )
 
         self._reporter.warning(f"Replacing managed container {name}")
-        if self._runtime.container_running(name, timeout=10):
-            self._runtime.stop(name)
-        self._runtime.remove(name)
-
-    def _cleanup_managed_container(self, name: str) -> None:
         try:
-            if not self._runtime.container_exists(name):
+            if self._runtime.container_running(container_id, timeout=10):
+                self._runtime.stop(container_id)
+            self._runtime.remove(container_id)
+        except ContainerNotFoundError:
+            return
+
+    def _verify_detached_container(
+        self,
+        container_id: str,
+        *,
+        name: str,
+        launch_id: str,
+    ) -> None:
+        try:
+            owned = self._runtime.container_is_managed(
+                container_id,
+                launch_id=launch_id,
+            )
+            if not owned:
+                raise ReadinessError(
+                    "started container identity changed during startup checks"
+                )
+            if not self._runtime.container_running(container_id, timeout=10):
+                raise ReadinessError("started container stopped during startup checks")
+            if self._runtime.container_id(name) != container_id:
+                raise ReadinessError(
+                    "started container no longer owns its expected name during "
+                    "startup checks"
+                )
+        except ContainerNotFoundError as exc:
+            raise ReadinessError(
+                "started container was replaced during startup checks"
+            ) from exc
+
+    def _cleanup_managed_container(
+        self,
+        name: str,
+        *,
+        launch_id: str,
+        container_id: str | None,
+    ) -> None:
+        try:
+            cleanup_id = container_id or self._runtime.container_id(name)
+            if cleanup_id is None:
                 return
-            if not self._runtime.container_is_managed(name):
+            if not self._runtime.container_is_managed(
+                cleanup_id,
+                launch_id=launch_id,
+            ):
                 self._reporter.warning(
-                    f"Refusing to clean up unmanaged container {name}"
+                    f"Refusing to clean up container {name} from another launch"
                 )
                 return
             self._reporter.warning(f"Cleaning up container {name}")
-            if self._runtime.container_running(name, timeout=10):
-                self._runtime.stop(name)
-            self._runtime.remove(name)
+            if self._runtime.container_running(cleanup_id, timeout=10):
+                self._runtime.stop(cleanup_id)
+            self._runtime.remove(cleanup_id)
+        except ContainerNotFoundError:
+            return
         except Exception as exc:
             self._reporter.warning(f"Container cleanup failed: {exc}")
 
@@ -266,14 +361,16 @@ def wait_for_health(
     client: VllmService,
     reporter: Reporter,
     clock: Clock,
+    container: str | None = None,
 ) -> HealthResult:
     """Poll against a monotonic deadline rather than treating seconds as attempts."""
 
     reporter.info(f"Waiting up to {plan.ready_timeout_seconds}s for /health ...")
     deadline = clock.monotonic() + plan.ready_timeout_seconds
+    container = plan.container_name if container is None else container
     tailer = BackgroundLogTailer(
         lambda: runtime.open_logs(
-            plan.container_name,
+            container,
             capture_output=True,
             tail=None,
         ),
@@ -287,6 +384,7 @@ def wait_for_health(
         tailer = None
 
     try:
+        consecutive_exit_observations = 0
         while True:
             remaining = deadline - clock.monotonic()
             if remaining <= 0:
@@ -299,19 +397,37 @@ def wait_for_health(
                 )
 
             inspect_timeout = min(10.0, remaining)
-            if not runtime.container_running(
-                plan.container_name,
-                timeout=inspect_timeout,
-            ):
+            try:
+                running = runtime.container_running(
+                    container,
+                    timeout=inspect_timeout,
+                )
+            except ContainerNotFoundError:
                 return HealthResult(
                     ok=False,
-                    reason="container exited before becoming ready",
+                    reason="container disappeared before becoming ready",
                 )
+            except ContainerInspectionError as exc:
+                running = False
+                consecutive_exit_observations = 0
+                reporter.warning(f"Could not inspect container state; retrying: {exc}")
+            else:
+                if not running:
+                    consecutive_exit_observations += 1
+                    if consecutive_exit_observations >= HEALTH_EXIT_CONFIRMATIONS:
+                        return HealthResult(
+                            ok=False,
+                            reason="container exited before becoming ready",
+                        )
+                else:
+                    consecutive_exit_observations = 0
 
             remaining = deadline - clock.monotonic()
             if remaining <= 0:
                 continue
-            if client.health(timeout=min(HEALTH_REQUEST_TIMEOUT_SECONDS, remaining)):
+            if running and client.health(
+                timeout=min(HEALTH_REQUEST_TIMEOUT_SECONDS, remaining)
+            ):
                 return HealthResult(ok=True)
 
             remaining = deadline - clock.monotonic()
@@ -330,7 +446,7 @@ def run_warmup(
 ) -> CheckResult:
     if plan.warmup_requests == 0:
         reporter.info("Warmup skipped.")
-        return CheckResult(name="warmup", attempts=0)
+        return CheckResult(attempts=0)
 
     reporter.info(f"Running {plan.warmup_requests} warmup completion(s)...")
     prompt = (
@@ -359,7 +475,6 @@ def run_warmup(
             reporter.error(f"Warmup {index}/{plan.warmup_requests} failed: {detail}")
 
     return CheckResult(
-        name="warmup",
         attempts=plan.warmup_requests,
         failures=tuple(failures),
     )
@@ -387,12 +502,11 @@ def smoke_check(
         reporter.success(f"Smoke check passed. Response saved to {path}")
         for line in result.body.splitlines()[:3]:
             reporter.container_log(line)
-        return CheckResult(name="smoke", attempts=1)
+        return CheckResult(attempts=1)
 
     detail = result.failure_detail()
     reporter.error(f"Smoke check failed: {detail}")
     return CheckResult(
-        name="smoke",
         attempts=1,
         failures=(f"smoke check failed: {detail}",),
     )
